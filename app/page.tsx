@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -32,6 +33,7 @@ export default function Home() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [quotaDrafts, setQuotaDrafts] = useState<Record<string, string>>({});
+  const [userSearch, setUserSearch] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -72,45 +74,51 @@ export default function Home() {
   async function loadAccount() {
     if (!user) return;
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("quota_bytes")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (profile?.quota_bytes) {
-      setQuota(Number(profile.quota_bytes));
-    }
-
     const { data, error } = await supabase.rpc("is_admin");
 
     if (error) {
       setIsAdmin(false);
+      setMessage("خطا در بررسی دسترسی مدیر: " + error.message);
       return;
     }
 
     const admin = data === true;
     setIsAdmin(admin);
 
-    if (admin) {
-      const { data: users, error: usersError } =
-        await supabase.rpc("admin_list_users");
+    if (!admin) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("quota_bytes")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      if (usersError) {
-        setMessage("خطا در دریافت کاربران: " + usersError.message);
-        return;
-      }
-
-      setAdminUsers((users ?? []) as AdminUser[]);
-      setQuotaDrafts(
-        Object.fromEntries(
-          (users ?? []).map((u: AdminUser) => [
-            u.id,
-            (Number(u.quota_bytes) / 1024 / 1024 / 1024).toString(),
-          ])
-        )
+      setQuota(
+        profile?.quota_bytes
+          ? Number(profile.quota_bytes)
+          : DEFAULT_LIMIT
       );
+      return;
     }
+
+    const { data: users, error: usersError } =
+      await supabase.rpc("admin_list_users");
+
+    if (usersError) {
+      setMessage("خطا در دریافت کاربران: " + usersError.message);
+      return;
+    }
+
+    const list = (users ?? []) as AdminUser[];
+    setAdminUsers(list);
+
+    setQuotaDrafts(
+      Object.fromEntries(
+        list.map((u) => [
+          u.id,
+          (Number(u.quota_bytes) / 1024 / 1024 / 1024).toString(),
+        ])
+      )
+    );
   }
 
   useEffect(() => {
@@ -123,6 +131,7 @@ export default function Home() {
       setFiles([]);
       setUsed(0);
       setQuota(DEFAULT_LIMIT);
+      setUserSearch("");
     }
   }, [user]);
 
@@ -163,7 +172,7 @@ export default function Home() {
     setBusy(true);
     setMessage("");
 
-    if (used + file.size > quota) {
+    if (!isAdmin && used + file.size > quota) {
       setMessage("با این فایل از سقف فضای حسابت عبور می‌کنی.");
       setBusy(false);
       return;
@@ -216,7 +225,7 @@ export default function Home() {
 
   async function updateQuota(target: AdminUser) {
     if (target.id === user.id) {
-      setMessage("امکان تغییر سهمیه حساب مدیر از این بخش وجود ندارد.");
+      setMessage("نمی‌توانی سهمیه حساب مدیر را از این بخش تغییر بدهی.");
       return;
     }
 
@@ -248,8 +257,52 @@ export default function Home() {
     setBusy(false);
   }
 
+  async function toggleBlock(target: AdminUser) {
+    if (target.id === user.id) {
+      setMessage("امکان مسدودکردن حساب مدیر وجود ندارد.");
+      return;
+    }
+
+    const action = target.is_blocked ? "فعال‌کردن" : "مسدودکردن";
+
+    if (!window.confirm(`آیا از ${action} این کاربر مطمئنی؟`)) {
+      return;
+    }
+
+    setBusy(true);
+    setMessage("");
+
+    const { error } = await supabase.rpc("admin_update_user", {
+      target_id: target.id,
+      new_quota_bytes: Number(target.quota_bytes),
+      new_is_blocked: !target.is_blocked,
+    });
+
+    if (error) {
+      setMessage("خطا در تغییر وضعیت: " + error.message);
+    } else {
+      setMessage(
+        target.is_blocked
+          ? "وضعیت کاربر به فعال تغییر کرد."
+          : "وضعیت کاربر به مسدود تغییر کرد."
+      );
+      await loadAccount();
+    }
+
+    setBusy(false);
+  }
+
   const formatGB = (bytes: number) =>
     (bytes / 1024 / 1024 / 1024).toFixed(2);
+
+  const filteredUsers = adminUsers.filter((u) => {
+    const search = userSearch.trim().toLowerCase();
+
+    return (
+      u.id.toLowerCase().includes(search) ||
+      (u.email || "").toLowerCase().includes(search)
+    );
+  });
 
   return (
     <main className="shell">
@@ -329,7 +382,7 @@ export default function Home() {
             {isAdmin && (
               <div className="accountId">
                 <b>★ مدیر اصلی My Cloud</b>
-                <small>دسترسی مدیریت برای این حساب فعال است.</small>
+                <small>حساب مدیر در رابط سایت بدون محدودیت سهمیه است.</small>
               </div>
             )}
 
@@ -358,14 +411,21 @@ export default function Home() {
               <div className="usageTop">
                 <b>فضای ذخیره‌سازی</b>
                 <span>
-                  {formatGB(used)} از {formatGB(quota)} گیگابایت
+                  {formatGB(used)} گیگابایت مصرف‌شده
+                  {isAdmin ? " · نامحدود" : ` از ${formatGB(quota)} گیگابایت`}
                 </span>
               </div>
 
               <div className="bar">
                 <i
                   style={{
-                    width: `${Math.min(100, (used / quota) * 100)}%`,
+                    width: `${
+                      isAdmin
+                        ? 0
+                        : quota > 0
+                          ? Math.min(100, (used / quota) * 100)
+                          : 0
+                    }%`,
                   }}
                 />
               </div>
@@ -437,50 +497,85 @@ export default function Home() {
 
               <div className="filesHead">
                 <h2>کاربران سایت</h2>
-                <button className="ghost" onClick={loadAccount}>
+                <button
+                  className="ghost"
+                  disabled={busy}
+                  onClick={loadAccount}
+                >
                   به‌روزرسانی
                 </button>
               </div>
 
-              <p>تعداد کاربران: {adminUsers.length}</p>
+              <p>تعداد کل کاربران: {adminUsers.length}</p>
 
-              {adminUsers.map((u) => (
-                <div className="accountId" key={u.id}>
-                  <div>
-                    <b>{u.email || "بدون ایمیل"}</b>
-                    <small>{u.id}</small>
-                    <small>
-                      نقش: {u.role === "admin" ? "مدیر" : "کاربر"}
-                      {" · "}
-                      وضعیت: {u.is_blocked ? "مسدود" : "فعال"}
-                    </small>
-                  </div>
+              <label>جست‌وجو با ایمیل یا شناسه کاربر</label>
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="ایمیل یا UID را وارد کن..."
+              />
 
-                  <label>فضا (گیگابایت)</label>
+              <p>نتایج پیدا شده: {filteredUsers.length}</p>
 
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={quotaDrafts[u.id] ?? ""}
-                    disabled={u.id === user.id || busy}
-                    onChange={(e) =>
-                      setQuotaDrafts((old) => ({
-                        ...old,
-                        [u.id]: e.target.value,
-                      }))
-                    }
-                  />
-
-                  <button
-                    className="small"
-                    disabled={u.id === user.id || busy}
-                    onClick={() => updateQuota(u)}
-                  >
-                    ذخیره فضا
-                  </button>
+              {filteredUsers.length === 0 ? (
+                <div className="empty">
+                  کاربری با این مشخصات پیدا نشد.
                 </div>
-              ))}
+              ) : (
+                filteredUsers.map((u) => (
+                  <div className="accountId" key={u.id}>
+                    <div>
+                      <b>{u.email || "بدون ایمیل"}</b>
+                      <small>{u.id}</small>
+                      <small>
+                        نقش: {u.role === "admin" ? "مدیر" : "کاربر"}
+                        {" · "}
+                        وضعیت: {u.is_blocked ? "مسدود" : "فعال"}
+                      </small>
+                      <small>
+                        سهمیه فعلی: {formatGB(Number(u.quota_bytes))} گیگابایت
+                      </small>
+                    </div>
+
+                    <label>فضا (گیگابایت)</label>
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={quotaDrafts[u.id] ?? ""}
+                      disabled={u.id === user.id || busy}
+                      onChange={(e) =>
+                        setQuotaDrafts((old) => ({
+                          ...old,
+                          [u.id]: e.target.value,
+                        }))
+                      }
+                    />
+
+                    <button
+                      className="small"
+                      disabled={u.id === user.id || busy}
+                      onClick={() => updateQuota(u)}
+                    >
+                      ذخیره فضا
+                    </button>
+
+                    <button
+                      className={u.is_blocked ? "small" : "delete"}
+                      disabled={u.id === user.id || busy}
+                      onClick={() => toggleBlock(u)}
+                    >
+                      {u.is_blocked ? "فعال‌کردن کاربر" : "مسدودکردن کاربر"}
+                    </button>
+
+                    {u.id === user.id && (
+                      <small>این حساب، حساب مدیر اصلی است.</small>
+                    )}
+                  </div>
+                ))
+              )}
             </section>
           )}
         </>
@@ -513,4 +608,4 @@ export default function Home() {
       </footer>
     </main>
   );
-     }
+}
