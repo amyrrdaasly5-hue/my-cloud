@@ -495,6 +495,20 @@ export default function Home() {
     return `${(bytes / 1024).toFixed(0)} KB/s`;
   };
 
+  // نوار مدیر: هر ۱۵ گیگابایت یک چرخه کامل
+  const adminBarPercent =
+    used > 0
+      ? used % DEFAULT_LIMIT === 0
+        ? 100
+        : ((used % DEFAULT_LIMIT) / DEFAULT_LIMIT) * 100
+      : 0;
+
+  // نوار کاربران عادی: نسبت مصرف به سهمیه واقعی
+  const userBarPercent =
+    quota > 0
+      ? Math.min(100, (used / quota) * 100)
+      : 0;
+
   const filteredUsers = adminUsers.filter((u) => {
     const search = userSearch.trim().toLowerCase();
 
@@ -582,7 +596,7 @@ export default function Home() {
             {isAdmin && (
               <div className="accountId">
                 <b>★ مدیر اصلی My Cloud</b>
-                <small>حساب مدیر در رابط سایت بدون محدودیت سهمیه است.</small>
+                <small>حساب مدیر بدون محدودیت سهمیه است.</small>
               </div>
             )}
 
@@ -624,24 +638,37 @@ export default function Home() {
                 </span>
               </div>
 
-              <div className="bar">
+              <div
+                className="bar"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={isAdmin ? adminBarPercent : userBarPercent}
+              >
                 <i
                   style={{
                     width: `${
-                      isAdmin
-                        ? 0
-                        : quota > 0
-                          ? Math.min(100, (used / quota) * 100)
-                          : 0
+                      isAdmin ? adminBarPercent : userBarPercent
                     }%`,
                   }}
                 />
               </div>
 
-              {!isAdmin && (
+              {isAdmin ? (
                 <small>
-                  فضای باقی‌مانده: {formatGB(Math.max(0, quota - used))} گیگابایت
+                  فضای نامحدود مدیر · هر ۱۵ گیگابایت یک نوار کامل
                 </small>
+              ) : (
+                <>
+                  <small>
+                    {userBarPercent.toFixed(2)}٪ از فضای شما پر شده است
+                  </small>
+
+                  <small>
+                    فضای باقی‌مانده:{" "}
+                    {formatGB(Math.max(0, quota - used))} گیگابایت
+                  </small>
+                </>
               )}
             </div>
 
