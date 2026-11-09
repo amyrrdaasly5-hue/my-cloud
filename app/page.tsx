@@ -58,11 +58,18 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // فهرست‌کردن فایل‌ها و پوشه‌ها به‌صورت بازگشتی
+  // دریافت مصرف واقعی فضا از دیتابیس و فهرست فایل‌ها
   async function refreshFiles() {
     if (!user) return;
 
     try {
+      const { data: usage, error: usageError } =
+        await supabase.rpc("get_my_storage_usage");
+
+      if (usageError) throw usageError;
+
+      setUsed(Number(usage ?? 0));
+
       const allFiles: FileRow[] = [];
 
       async function readFolder(folderPath: string) {
@@ -104,15 +111,7 @@ export default function Home() {
       }
 
       await readFolder(user.id);
-
       setFiles(allFiles);
-
-      const total = allFiles.reduce(
-        (sum, file) => sum + Number(file.metadata?.size ?? 0),
-        0
-      );
-
-      setUsed(total);
     } catch (error: any) {
       setMessage("خطا در دریافت فایل‌ها: " + error.message);
     }
