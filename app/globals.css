@@ -1,3 +1,4 @@
+
 * {
   box-sizing: border-box;
 }
@@ -14,4 +15,24 @@ body {
   direction: rtl;
   background: #f5f7fb;
   color: #222;
+}
+
+/* نوار فضای ذخیره‌سازی */
+.bar {
+  display: block;
+  width: 100%;
+  height: 14px;
+  margin: 10px 0;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #e5e7eb;
+}
+
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 20px;
+  background: linear-gradient(90deg, #16a34a, #4ade80);
+  transition: width 0.5s ease;
 }
