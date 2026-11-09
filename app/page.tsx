@@ -496,11 +496,15 @@ export default function Home() {
   };
 
   // نوار مدیر: هر ۱۵ گیگابایت یک چرخه کامل
+  // حداقل ۲ درصد نمایش برای دیده‌شدن رنگ سبز
   const adminBarPercent =
     used > 0
       ? used % DEFAULT_LIMIT === 0
         ? 100
-        : ((used % DEFAULT_LIMIT) / DEFAULT_LIMIT) * 100
+        : Math.max(
+            2,
+            ((used % DEFAULT_LIMIT) / DEFAULT_LIMIT) * 100
+          )
       : 0;
 
   // نوار کاربران عادی: نسبت مصرف به سهمیه واقعی
