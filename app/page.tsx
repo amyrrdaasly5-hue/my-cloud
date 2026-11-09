@@ -1,15 +1,18 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import * as tus from "tus-js-client";
 import { supabase } from "@/lib/supabase";
 
 const DEFAULT_LIMIT = 15 * 1024 * 1024 * 1024;
+const CHUNK_SIZE = 6 * 1024 * 1024;
 
 type FileRow = {
+  id: string | null;
   name: string;
-  id: string;
-  metadata?: { size?: number } | null;
+  path: string;
+  metadata?: { size?: number | string } | null;
 };
 
 type AdminUser = {
@@ -31,9 +34,15 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [quotaDrafts, setQuotaDrafts] = useState<Record<string, string>>({});
   const [userSearch, setUserSearch] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingName, setUploadingName] = useState("");
+  const [uploadSpeed, setUploadSpeed] = useState(0);
+
+  const speedRef = useRef({ time: 0, bytes: 0 });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -49,30 +58,87 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // فهرست‌کردن فایل‌ها و پوشه‌ها به‌صورت بازگشتی
   async function refreshFiles() {
     if (!user) return;
 
-    const { data, error } = await supabase.storage
-      .from("user-files")
-      .list(user.id, {
-        limit: 1000,
-        sortBy: { column: "name", order: "asc" },
-      });
+    try {
+      const allFiles: FileRow[] = [];
 
-    if (error) {
-      setMessage(error.message);
-      return;
+      async function readFolder(folderPath: string) {
+        let offset = 0;
+
+        while (true) {
+          const { data, error } = await supabase.storage
+            .from("user-files")
+            .list(folderPath, {
+              limit: 1000,
+              offset,
+              sortBy: { column: "name", order: "asc" },
+            });
+
+          if (error) throw error;
+
+          const rows = data ?? [];
+
+          for (const item of rows) {
+            const fullPath = `${folderPath}/${item.name}`;
+
+            if (!item.id) {
+              await readFolder(fullPath);
+            } else {
+              const relativePath = fullPath.slice(user.id.length + 1);
+
+              allFiles.push({
+                id: item.id,
+                name: item.name,
+                path: relativePath,
+                metadata: item.metadata as FileRow["metadata"],
+              });
+            }
+          }
+
+          if (rows.length < 1000) break;
+          offset += 1000;
+        }
+      }
+
+      await readFolder(user.id);
+
+      setFiles(allFiles);
+
+      const total = allFiles.reduce(
+        (sum, file) => sum + Number(file.metadata?.size ?? 0),
+        0
+      );
+
+      setUsed(total);
+    } catch (error: any) {
+      setMessage("خطا در دریافت فایل‌ها: " + error.message);
     }
-
-    const rows = (data ?? []) as FileRow[];
-    setFiles(rows);
-    setUsed(
-      rows.reduce((sum, f) => sum + (f.metadata?.size ?? 0), 0)
-    );
   }
 
   async function loadAccount() {
     if (!user) return;
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("quota_bytes, is_blocked")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      setMessage("خطا در دریافت اطلاعات حساب: " + profileError.message);
+      return;
+    }
+
+    setQuota(
+      profile?.quota_bytes != null
+        ? Number(profile.quota_bytes)
+        : DEFAULT_LIMIT
+    );
+
+    setIsBlocked(profile?.is_blocked === true);
 
     const { data, error } = await supabase.rpc("is_admin");
 
@@ -86,17 +152,7 @@ export default function Home() {
     setIsAdmin(admin);
 
     if (!admin) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("quota_bytes")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      setQuota(
-        profile?.quota_bytes
-          ? Number(profile.quota_bytes)
-          : DEFAULT_LIMIT
-      );
+      setAdminUsers([]);
       return;
     }
 
@@ -109,6 +165,7 @@ export default function Home() {
     }
 
     const list = (users ?? []) as AdminUser[];
+
     setAdminUsers(list);
 
     setQuotaDrafts(
@@ -123,10 +180,11 @@ export default function Home() {
 
   useEffect(() => {
     if (user) {
-      refreshFiles();
       loadAccount();
+      refreshFiles();
     } else {
       setIsAdmin(false);
+      setIsBlocked(false);
       setAdminUsers([]);
       setFiles([]);
       setUsed(0);
@@ -139,67 +197,185 @@ export default function Home() {
     setBusy(true);
     setMessage("");
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
-    setMessage(
-      error
-        ? error.message
-        : "ثبت‌نام انجام شد. اگر تأیید ایمیل فعال باشد، ایمیلت را بررسی کن."
-    );
+      if (error) throw error;
 
-    setBusy(false);
+      if (data.session) {
+        setMessage("ثبت‌نام موفق بود و وارد سایت شدی.");
+      } else {
+        setMessage(
+          "ثبت‌نام انجام شد. اگر وارد نشدی، تنظیم Confirm email را در Supabase بررسی کن."
+        );
+      }
+    } catch (error: any) {
+      setMessage("خطا در ثبت‌نام: " + error.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function signIn() {
     setBusy(true);
     setMessage("");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    setMessage(error ? error.message : "با موفقیت وارد شدی.");
-    setBusy(false);
+      if (error) {
+        if (error.message.toLowerCase().includes("email not confirmed")) {
+          throw new Error(
+            "این حساب قبلاً تأیید نشده است. حساب‌های قدیمی ممکن است به تأیید جداگانه نیاز داشته باشند."
+          );
+        }
+
+        throw error;
+      }
+
+      setMessage("با موفقیت وارد شدی.");
+    } catch (error: any) {
+      setMessage("خطا در ورود: " + error.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
+  // آپلود مرحله‌ای با TUS و نمایش درصد و سرعت
   async function upload(file?: File) {
     if (!file || !user) return;
 
-    setBusy(true);
-    setMessage("");
-
-    if (!isAdmin && used + file.size > quota) {
-      setMessage("با این فایل از سقف فضای حسابت عبور می‌کنی.");
-      setBusy(false);
+    if (isBlocked) {
+      setMessage("حساب شما مسدود شده است و امکان آپلود ندارید.");
       return;
     }
 
-    const safeName = file.name.replace(/[^\w.\-آ-ی]/g, "_");
-    const path = `${user.id}/${Date.now()}-${safeName}`;
+    if (!isAdmin && used + file.size > quota) {
+      setMessage("با این فایل از سقف فضای حسابت عبور می‌کنی.");
+      return;
+    }
 
-    const { error } = await supabase.storage
-      .from("user-files")
-      .upload(path, file, {
-        upsert: false,
-        contentType: file.type || "application/octet-stream",
+    setBusy(true);
+    setMessage("");
+    setUploadProgress(0);
+    setUploadSpeed(0);
+    setUploadingName(file.name);
+
+    speedRef.current = {
+      time: Date.now(),
+      bytes: 0,
+    };
+
+    try {
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+
+      if (sessionError) throw sessionError;
+
+      const session = sessionData.session;
+
+      if (!session) {
+        throw new Error("نشست شما منقضی شده است. دوباره وارد شو.");
+      }
+
+      const projectUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+      if (!projectUrl) {
+        throw new Error("آدرس Supabase تنظیم نشده است.");
+      }
+
+      const projectId = new URL(projectUrl).hostname.split(".")[0];
+
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+      if (!anonKey) {
+        throw new Error("کلید عمومی Supabase تنظیم نشده است.");
+      }
+
+      const safeName = file.name.replace(/[^\w.\-آ-ی]/g, "_");
+      const path = `${user.id}/${Date.now()}-${safeName}`;
+
+      await new Promise<void>((resolve, reject) => {
+        const uploader = new tus.Upload(file, {
+          endpoint: `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`,
+
+          headers: {
+            authorization: `Bearer ${session.access_token}`,
+            apikey: anonKey,
+            "x-upsert": "false",
+          },
+
+          metadata: {
+            bucketName: "user-files",
+            objectName: path,
+            contentType: file.type || "application/octet-stream",
+            cacheControl: "3600",
+          },
+
+          chunkSize: CHUNK_SIZE,
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          uploadDataDuringCreation: true,
+          removeFingerprintOnSuccess: true,
+
+          onProgress(bytesUploaded, bytesTotal) {
+            const percent = Math.round(
+              (bytesUploaded / bytesTotal) * 100
+            );
+
+            setUploadProgress(percent);
+
+            const now = Date.now();
+            const elapsed = (now - speedRef.current.time) / 1000;
+
+            if (elapsed > 0) {
+              const speed =
+                (bytesUploaded - speedRef.current.bytes) / elapsed;
+
+              setUploadSpeed(Math.max(0, speed));
+
+              speedRef.current = {
+                time: now,
+                bytes: bytesUploaded,
+              };
+            }
+          },
+
+          onError(error) {
+            reject(error);
+          },
+
+          onSuccess() {
+            setUploadProgress(100);
+            resolve();
+          },
+        });
+
+        uploader.start();
       });
 
-    setMessage(
-      error ? error.message : "فایل با موفقیت بارگذاری شد."
-    );
-
-    await refreshFiles();
-    setBusy(false);
+      setMessage("فایل با موفقیت بارگذاری شد.");
+      await refreshFiles();
+    } catch (error: any) {
+      setMessage("خطا در آپلود: " + error.message);
+    } finally {
+      setBusy(false);
+      setUploadingName("");
+      setUploadSpeed(0);
+    }
   }
 
-  async function download(name: string) {
+  async function download(path: string) {
+    if (!user) return;
+
     const { data, error } = await supabase.storage
       .from("user-files")
-      .download(`${user.id}/${name}`);
+      .download(`${user.id}/${path}`);
 
     if (error || !data) {
       setMessage(error?.message ?? "دانلود ناموفق بود.");
@@ -208,19 +384,29 @@ export default function Home() {
 
     const url = URL.createObjectURL(data);
     const a = document.createElement("a");
+
     a.href = url;
-    a.download = name;
+    a.download = path.split("/").pop() || "download";
     a.click();
+
     URL.revokeObjectURL(url);
   }
 
-  async function remove(name: string) {
+  async function remove(path: string) {
+    if (!user || busy) return;
+
+    if (!window.confirm("آیا از حذف این فایل مطمئنی؟")) return;
+
+    setBusy(true);
+
     const { error } = await supabase.storage
       .from("user-files")
-      .remove([`${user.id}/${name}`]);
+      .remove([`${user.id}/${path}`]);
 
     setMessage(error ? error.message : "فایل حذف شد.");
+
     await refreshFiles();
+    setBusy(false);
   }
 
   async function updateQuota(target: AdminUser) {
@@ -283,9 +469,10 @@ export default function Home() {
     } else {
       setMessage(
         target.is_blocked
-          ? "وضعیت کاربر به فعال تغییر کرد."
-          : "وضعیت کاربر به مسدود تغییر کرد."
+          ? "کاربر فعال شد."
+          : "کاربر مسدود شد."
       );
+
       await loadAccount();
     }
 
@@ -294,6 +481,14 @@ export default function Home() {
 
   const formatGB = (bytes: number) =>
     (bytes / 1024 / 1024 / 1024).toFixed(2);
+
+  const formatSpeed = (bytes: number) => {
+    if (bytes >= 1024 * 1024) {
+      return `${(bytes / 1024 / 1024).toFixed(2)} MB/s`;
+    }
+
+    return `${(bytes / 1024).toFixed(0)} KB/s`;
+  };
 
   const filteredUsers = adminUsers.filter((u) => {
     const search = userSearch.trim().toLowerCase();
@@ -386,6 +581,12 @@ export default function Home() {
               </div>
             )}
 
+            {isBlocked && (
+              <div className="notice">
+                حساب شما مسدود شده است. برای پیگیری با پشتیبانی تماس بگیر.
+              </div>
+            )}
+
             <div className="accountId">
               <div>
                 <b>شناسه اختصاصی حساب</b>
@@ -412,7 +613,9 @@ export default function Home() {
                 <b>فضای ذخیره‌سازی</b>
                 <span>
                   {formatGB(used)} گیگابایت مصرف‌شده
-                  {isAdmin ? " · نامحدود" : ` از ${formatGB(quota)} گیگابایت`}
+                  {isAdmin
+                    ? " · نامحدود"
+                    : ` از ${formatGB(quota)} گیگابایت`}
                 </span>
               </div>
 
@@ -429,22 +632,59 @@ export default function Home() {
                   }}
                 />
               </div>
+
+              {!isAdmin && (
+                <small>
+                  فضای باقی‌مانده: {formatGB(Math.max(0, quota - used))} گیگابایت
+                </small>
+              )}
             </div>
 
             <label className="upload">
               <span>＋</span>
               <b>انتخاب و بارگذاری فایل</b>
               <small>عکس، ویدئو، PDF و فایل‌های دیگر</small>
+
               <input
                 type="file"
-                disabled={busy}
-                onChange={(e) => upload(e.target.files?.[0])}
+                disabled={busy || isBlocked}
+                onChange={(e) => {
+                  const selected = e.target.files?.[0];
+                  e.target.value = "";
+                  if (selected) void upload(selected);
+                }}
               />
             </label>
 
+            {busy && uploadingName && (
+              <div className="accountId">
+                <b>در حال بارگذاری: {uploadingName}</b>
+
+                <h2>{uploadProgress}٪</h2>
+
+                <div className="bar">
+                  <i style={{ width: `${uploadProgress}%` }} />
+                </div>
+
+                <small>
+                  سرعت فعلی: {formatSpeed(uploadSpeed)}
+                </small>
+
+                <small>
+                  {uploadProgress === 100
+                    ? "آپلود انجام شده؛ در حال تکمیل عملیات..."
+                    : "لطفاً تا پایان آپلود صبر کن."}
+                </small>
+              </div>
+            )}
+
             <div className="filesHead">
               <h2>فایل‌های من</h2>
-              <button className="ghost" onClick={refreshFiles}>
+              <button
+                className="ghost"
+                disabled={busy}
+                onClick={refreshFiles}
+              >
                 به‌روزرسانی
               </button>
             </div>
@@ -456,14 +696,14 @@ export default function Home() {
             ) : (
               <div className="fileList">
                 {files.map((f) => (
-                  <div className="file" key={f.name}>
+                  <div className="file" key={f.path}>
                     <span className="fileIcon">▤</span>
 
                     <div className="fileInfo">
-                      <b>{f.name.replace(/^\d+-/, "")}</b>
+                      <b>{f.path}</b>
                       <small>
                         {(
-                          (f.metadata?.size ?? 0) /
+                          Number(f.metadata?.size ?? 0) /
                           1024 /
                           1024
                         ).toFixed(1)}{" "}
@@ -473,14 +713,16 @@ export default function Home() {
 
                     <button
                       className="small"
-                      onClick={() => download(f.name)}
+                      disabled={busy}
+                      onClick={() => download(f.path)}
                     >
                       دانلود
                     </button>
 
                     <button
                       className="delete"
-                      onClick={() => remove(f.name)}
+                      disabled={busy}
+                      onClick={() => remove(f.path)}
                     >
                       حذف
                     </button>
