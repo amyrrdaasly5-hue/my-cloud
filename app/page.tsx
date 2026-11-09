@@ -58,7 +58,6 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // دریافت مصرف واقعی فضا از دیتابیس و فهرست فایل‌ها
   async function refreshFiles() {
     if (!user) return;
 
@@ -246,7 +245,6 @@ export default function Home() {
     }
   }
 
-  // آپلود مرحله‌ای با TUS و نمایش درصد و سرعت
   async function upload(file?: File) {
     if (!file || !user) return;
 
@@ -481,6 +479,14 @@ export default function Home() {
   const formatGB = (bytes: number) =>
     (bytes / 1024 / 1024 / 1024).toFixed(2);
 
+  const formatUsage = (bytes: number) => {
+    if (bytes < 1024 * 1024 * 1024) {
+      return `${(bytes / 1024 / 1024).toFixed(2)} مگابایت`;
+    }
+
+    return `${formatGB(bytes)} گیگابایت`;
+  };
+
   const formatSpeed = (bytes: number) => {
     if (bytes >= 1024 * 1024) {
       return `${(bytes / 1024 / 1024).toFixed(2)} MB/s`;
@@ -611,7 +617,7 @@ export default function Home() {
               <div className="usageTop">
                 <b>فضای ذخیره‌سازی</b>
                 <span>
-                  {formatGB(used)} گیگابایت مصرف‌شده
+                  {formatUsage(used)} مصرف‌شده
                   {isAdmin
                     ? " · نامحدود"
                     : ` از ${formatGB(quota)} گیگابایت`}
