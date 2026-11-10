@@ -29,6 +29,60 @@ type Theme = "light" | "dark" | "system";
 type Accent = "blue" | "purple" | "green" | "pink";
 type Page = "home" | "files" | "upload" | "support" | "account" | "settings" | "admin";
 
+// تبدیل نام فارسی به کد ASCII امن برای ذخیره‌سازی
+function encodeFileName(fileName: string) {
+  const bytes = new TextEncoder().encode(fileName);
+  let binary = "";
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return (
+    "mcname_" +
+    btoa(binary)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "")
+  );
+}
+
+// بازگرداندن نام اصلی فایل برای نمایش
+function getDisplayFileName(storageName: string) {
+  const nameWithoutTimestamp = storageName.replace(/^\d+-/, "");
+
+  if (nameWithoutTimestamp.startsWith("mcname_")) {
+    try {
+      const encoded = nameWithoutTimestamp
+        .slice("mcname_".length)
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+      const padded = encoded.padEnd(
+        Math.ceil(encoded.length / 4) * 4,
+        "="
+      );
+
+      const binary = atob(padded);
+      const bytes = Uint8Array.from(
+        binary,
+        (char) => char.charCodeAt(0)
+      );
+
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return nameWithoutTimestamp;
+    }
+  }
+
+  // پشتیبانی از فایل‌های قدیمی
+  try {
+    return decodeURIComponent(nameWithoutTimestamp);
+  } catch {
+    return nameWithoutTimestamp;
+  }
+}
+
 export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -121,18 +175,6 @@ export default function Home() {
 
     return () => listener.subscription.unsubscribe();
   }, []);
-
-  // تبدیل نام ذخیره‌شده به نام اصلی برای نمایش
-  function getDisplayFileName(storageName: string) {
-    // پیشوند زمانی‌ای که هنگام آپلود به نام فایل اضافه می‌کنیم حذف می‌شود.
-    const nameWithoutTimestamp = storageName.replace(/^\d+-/, "");
-
-    try {
-      return decodeURIComponent(nameWithoutTimestamp);
-    } catch {
-      return nameWithoutTimestamp;
-    }
-  }
 
   async function refreshFiles() {
     if (!user) return;
@@ -386,14 +428,9 @@ export default function Home() {
 
       if (!anonKey) throw new Error("کلید عمومی Supabase تنظیم نشده است.");
 
-      // نام فارسی به کد ASCII تبدیل می‌شود تا Supabase مسیر را قبول کند.
-      // نام اصلی فایل در رابط سایت همچنان فارسی نمایش داده خواهد شد.
-      const encodedName = encodeURIComponent(file.name).replace(
-        /[!'()*]/g,
-        (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
-      );
-
-      const path = `${user.id}/${Date.now()}-${encodedName}`;
+      // نام ذخیره‌شده فقط ASCII است؛ نام اصلی فارسی جداگانه بازسازی می‌شود.
+      const safeName = encodeFileName(file.name);
+      const path = `${user.id}/${Date.now()}-${safeName}`;
 
       await new Promise<void>((resolve, reject) => {
         const uploader = new tus.Upload(file, {
@@ -454,7 +491,6 @@ export default function Home() {
     }
   }
 
-  // نام اصلی فایل برای دانلود دریافت می‌شود؛ مسیر ذخیره‌سازی تغییر نمی‌کند.
   async function download(path: string, fileName: string) {
     if (!user) return;
 
