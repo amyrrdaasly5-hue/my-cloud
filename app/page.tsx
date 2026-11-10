@@ -26,6 +26,7 @@ type AdminUser = {
 
 type Theme = "light" | "dark" | "system";
 type Accent = "blue" | "purple" | "green" | "pink";
+type Page = "home" | "files" | "upload" | "support" | "account" | "settings" | "admin";
 
 export default function Home() {
   const [email, setEmail] = useState("");
@@ -51,10 +52,18 @@ export default function Home() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [activeTab, setActiveTab] = useState("home");
-  const [showPassword, setShowPassword] = useState(false);
+  const [activeTab, setActiveTab] = useState<Page>("home");
 
   const speedRef = useRef({ time: 0, bytes: 0 });
+
+  function goTo(page: Page) {
+    setActiveTab(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function goHome() {
+    goTo("home");
+  }
 
   useEffect(() => {
     try {
@@ -241,6 +250,7 @@ export default function Home() {
       setUsed(0);
       setQuota(DEFAULT_LIMIT);
       setUserSearch("");
+      setActiveTab("home");
     }
   }, [user]);
 
@@ -286,6 +296,7 @@ export default function Home() {
       }
 
       setMessage("با موفقیت وارد شدی.");
+      setActiveTab("home");
     } catch (error: any) {
       setMessage("خطا در ورود: " + error.message);
     } finally {
@@ -566,16 +577,496 @@ export default function Home() {
 
   const usedPercent = isAdmin ? adminBarPercent : userBarPercent;
 
+  const pageNames: Record<Page, string> = {
+    home: "خانه",
+    files: "فایل‌های من",
+    upload: "آپلود فایل",
+    support: "پشتیبانی",
+    account: "حساب کاربری",
+    settings: "تنظیمات",
+    admin: "مدیریت",
+  };
+
+  function renderStorage() {
+    return (
+      <section className="panel storagePanel">
+        <div className="sectionHeading">
+          <div>
+            <span className="eyebrow">STORAGE OVERVIEW</span>
+            <h2>فضای ذخیره‌سازی من</h2>
+          </div>
+          <span className="storageIcon">◫</span>
+        </div>
+
+        <div className="storageNumbers">
+          <div>
+            <strong>{formatUsage(used)}</strong>
+            <small>مصرف‌شده</small>
+          </div>
+          <div className="storageLimit">
+            <strong>{isAdmin ? "نامحدود" : `${formatGB(quota)} GB`}</strong>
+            <small>سقف فضای حساب</small>
+          </div>
+        </div>
+
+        <div
+          className="bar storageBar"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={usedPercent}
+        >
+          <i style={{ width: `${usedPercent}%` }} />
+        </div>
+
+        <div className="storageBottom">
+          <span>{usedPercent.toFixed(1)}٪ استفاده‌شده</span>
+          <span>
+            {isAdmin
+              ? "حساب مدیر بدون محدودیت"
+              : `${formatGB(Math.max(0, quota - used))} گیگابایت باقی‌مانده`}
+          </span>
+        </div>
+      </section>
+    );
+  }
+
+  function renderUpload() {
+    return (
+      <section className="panel uploadPanel">
+        <div className="sectionHeading">
+          <div>
+            <span className="eyebrow">UPLOAD CENTER</span>
+            <h2>آپلود فایل جدید</h2>
+            <p>فایل‌های خودت را به فضای ابری منتقل کن.</p>
+          </div>
+          <span className="storageIcon">↑</span>
+        </div>
+
+        {isBlocked && (
+          <div className="notice">
+            حساب شما مسدود شده است و امکان آپلود ندارید.
+          </div>
+        )}
+
+        <label className="upload premiumUpload">
+          <span className="uploadPlus">＋</span>
+          <b>برای انتخاب فایل لمس کن</b>
+          <small>عکس، ویدئو، PDF و سایر فایل‌ها</small>
+          <input
+            type="file"
+            disabled={busy || isBlocked}
+            onChange={(e) => {
+              const selected = e.target.files?.[0];
+              e.target.value = "";
+              if (selected) void upload(selected);
+            }}
+          />
+        </label>
+
+        {busy && uploadingName && (
+          <div className="uploadProgress">
+            <div className="progressTitle">
+              <b>{uploadingName}</b>
+              <strong>{uploadProgress}٪</strong>
+            </div>
+            <div className="bar">
+              <i style={{ width: `${uploadProgress}%` }} />
+            </div>
+            <div className="progressDetails">
+              <span>سرعت: {formatSpeed(uploadSpeed)}</span>
+              <span>
+                {uploadProgress === 100
+                  ? "در حال تکمیل..."
+                  : "در حال بارگذاری فایل"}
+              </span>
+            </div>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function renderFiles() {
+    return (
+      <section className="panel filesPanel">
+        <div className="sectionHeading filesSectionHeading">
+          <div>
+            <span className="eyebrow">MY FILES</span>
+            <h2>فایل‌های من</h2>
+            <p>{files.length} فایل در فضای شخصی تو</p>
+          </div>
+          <button
+            className="ghost refreshButton"
+            disabled={busy}
+            onClick={refreshFiles}
+          >
+            ↻ به‌روزرسانی
+          </button>
+        </div>
+
+        <div className="fileToolbar">
+          <span>همه فایل‌ها</span>
+          <select
+            aria-label="مرتب‌سازی فایل‌ها"
+            value={fileSort}
+            onChange={(e) => setFileSort(e.target.value)}
+          >
+            <option value="name">مرتب‌سازی بر اساس نام</option>
+            <option value="size">بزرگ‌ترین حجم</option>
+          </select>
+        </div>
+
+        {sortedFiles.length === 0 ? (
+          <div className="empty premiumEmpty">
+            <span>☁</span>
+            <b>هنوز فایلی نداری</b>
+            <p>اولین فایل خودت را آپلود کن تا اینجا نمایش داده شود.</p>
+            <button onClick={() => goTo("upload")}>رفتن به آپلود</button>
+          </div>
+        ) : (
+          <div className="fileList premiumFileList">
+            {sortedFiles.map((f) => (
+              <article className="file premiumFile" key={f.path}>
+                <span className="fileIcon">▤</span>
+                <div className="fileInfo">
+                  <b title={f.path}>{f.path}</b>
+                  <small>
+                    {(Number(f.metadata?.size ?? 0) / 1024 / 1024).toFixed(1)} مگابایت
+                  </small>
+                </div>
+                <div className="fileActions">
+                  <button
+                    className="small"
+                    disabled={busy}
+                    onClick={() => download(f.path)}
+                  >
+                    ↓ دانلود
+                  </button>
+                  <button
+                    className="delete"
+                    disabled={busy}
+                    onClick={() => remove(f.path)}
+                  >
+                    حذف
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function renderAccount() {
+    return (
+      <section className="panel accountPanel">
+        <div className="sectionHeading">
+          <div>
+            <span className="eyebrow">ACCOUNT DETAILS</span>
+            <h2>اطلاعات حساب</h2>
+          </div>
+          <span className="storageIcon">♙</span>
+        </div>
+
+        <div className="accountDetails">
+          <div className="accountDetail">
+            <span>ایمیل</span>
+            <b>{user.email}</b>
+          </div>
+          <div className="accountDetail">
+            <span>شناسه اختصاصی</span>
+            <code>{user.id}</code>
+          </div>
+          <div className="accountDetail">
+            <span>نوع حساب</span>
+            <b>{isAdmin ? "مدیر اصلی" : "کاربر عادی"}</b>
+          </div>
+          <div className="accountDetail">
+            <span>وضعیت</span>
+            <b>{isBlocked ? "مسدود" : "فعال"}</b>
+          </div>
+        </div>
+
+        <button
+          className="copyId"
+          onClick={() => {
+            navigator.clipboard?.writeText(user.id);
+            setMessage("شناسه حساب کپی شد.");
+          }}
+        >
+          کپی شناسه حساب
+        </button>
+      </section>
+    );
+  }
+
+  function renderSettings() {
+    return (
+      <section className="panel settingsPanel">
+        <div className="sectionHeading">
+          <div>
+            <span className="eyebrow">PERSONAL SETTINGS</span>
+            <h2>تنظیمات</h2>
+            <p>شخصی‌سازی تجربه My Cloud</p>
+          </div>
+          <span className="storageIcon">⚙</span>
+        </div>
+
+        <div className="settingGroup">
+          <h3>🎨 ظاهر برنامه</h3>
+          <label htmlFor="themeSelect">پوسته برنامه</label>
+          <select
+            id="themeSelect"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as Theme)}
+          >
+            <option value="light">روشن</option>
+            <option value="dark">تیره</option>
+            <option value="system">هماهنگ با گوشی</option>
+          </select>
+
+          <label>رنگ اصلی</label>
+          <div className="colorChoices">
+            <button
+              type="button"
+              className={`colorChoice blue ${accent === "blue" ? "selected" : ""}`}
+              onClick={() => setAccent("blue")}
+              aria-label="آبی"
+              title="آبی"
+            />
+            <button
+              type="button"
+              className={`colorChoice purple ${accent === "purple" ? "selected" : ""}`}
+              onClick={() => setAccent("purple")}
+              aria-label="بنفش"
+              title="بنفش"
+            />
+            <button
+              type="button"
+              className={`colorChoice green ${accent === "green" ? "selected" : ""}`}
+              onClick={() => setAccent("green")}
+              aria-label="سبز"
+              title="سبز"
+            />
+            <button
+              type="button"
+              className={`colorChoice pink ${accent === "pink" ? "selected" : ""}`}
+              onClick={() => setAccent("pink")}
+              aria-label="صورتی"
+              title="صورتی"
+            />
+          </div>
+          <small>تنظیمات ظاهری به‌صورت خودکار ذخیره می‌شوند.</small>
+        </div>
+
+        <div className="settingGroup">
+          <h3>📁 تنظیمات فایل‌ها</h3>
+          <label htmlFor="settingsFileSort">مرتب‌سازی پیش‌فرض</label>
+          <select
+            id="settingsFileSort"
+            value={fileSort}
+            onChange={(e) => setFileSort(e.target.value)}
+          >
+            <option value="name">بر اساس نام</option>
+            <option value="size">بر اساس حجم</option>
+          </select>
+        </div>
+
+        <div className="settingGroup">
+          <h3>🔐 امنیت حساب</h3>
+          <label htmlFor="newPassword">رمز عبور جدید</label>
+          <input
+            id="newPassword"
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="حداقل ۸ کاراکتر"
+          />
+
+          <label htmlFor="confirmPassword">تکرار رمز جدید</label>
+          <input
+            id="confirmPassword"
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="رمز جدید را دوباره وارد کن"
+          />
+
+          <button
+            className="settingsAction"
+            disabled={busy || newPassword.length < 8 || !confirmPassword}
+            onClick={changePassword}
+          >
+            تغییر رمز عبور
+          </button>
+        </div>
+
+        <div className="settingGroup">
+          <h3>☁ درباره My Cloud</h3>
+          <div className="accountDetail">
+            <span>نام برنامه</span>
+            <b>My Cloud</b>
+          </div>
+          <div className="accountDetail">
+            <span>نسخه سایت</span>
+            <b>2.0.0</b>
+          </div>
+          <button className="settingsSupport" onClick={() => goTo("support")}>
+            رفتن به صفحه پشتیبانی
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderAdmin() {
+    return (
+      <section className="panel adminPanel">
+        <div className="sectionHeading">
+          <div>
+            <span className="eyebrow">ADMIN CONTROL CENTER</span>
+            <h2>پنل مدیریت</h2>
+            <p>مدیریت کاربران و فضای ذخیره‌سازی</p>
+          </div>
+          <span className="storageIcon">♜</span>
+        </div>
+
+        <div className="adminSummary">
+          <span>تعداد کل کاربران</span>
+          <strong>{adminUsers.length}</strong>
+        </div>
+
+        <label htmlFor="userSearch">جست‌وجوی کاربر</label>
+        <input
+          id="userSearch"
+          type="text"
+          value={userSearch}
+          onChange={(e) => setUserSearch(e.target.value)}
+          placeholder="ایمیل یا شناسه کاربر..."
+        />
+
+        <div className="adminUserList">
+          {filteredUsers.length === 0 ? (
+            <div className="empty">کاربری پیدا نشد.</div>
+          ) : (
+            filteredUsers.map((u) => (
+              <article className="adminUser" key={u.id}>
+                <div className="adminUserTop">
+                  <b>{u.email || "بدون ایمیل"}</b>
+                  <span className={u.is_blocked ? "statusBlocked" : "statusActive"}>
+                    {u.is_blocked ? "مسدود" : "فعال"}
+                  </span>
+                </div>
+
+                <small className="adminUid">{u.id}</small>
+                <small>نقش: {u.role === "admin" ? "مدیر" : "کاربر"}</small>
+                <small>
+                  سهمیه فعلی: {formatGB(Number(u.quota_bytes))} گیگابایت
+                </small>
+
+                <label>فضا به گیگابایت</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={quotaDrafts[u.id] ?? ""}
+                  disabled={u.id === user.id || busy}
+                  onChange={(e) =>
+                    setQuotaDrafts((old) => ({
+                      ...old,
+                      [u.id]: e.target.value,
+                    }))
+                  }
+                />
+
+                <div className="adminActions">
+                  <button
+                    className="small"
+                    disabled={u.id === user.id || busy}
+                    onClick={() => updateQuota(u)}
+                  >
+                    ذخیره سهمیه
+                  </button>
+                  <button
+                    className={u.is_blocked ? "small" : "delete"}
+                    disabled={u.id === user.id || busy}
+                    onClick={() => toggleBlock(u)}
+                  >
+                    {u.is_blocked ? "فعال‌کردن" : "مسدودکردن"}
+                  </button>
+                </div>
+
+                {u.id === user.id && (
+                  <small>این حساب، حساب مدیر اصلی است.</small>
+                )}
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  function renderSupport() {
+    return (
+      <section className="panel supportPagePanel">
+        <div className="sectionHeading">
+          <div>
+            <span className="eyebrow">MY CLOUD SUPPORT</span>
+            <h2>مرکز پشتیبانی</h2>
+            <p>برای راهنمایی و پیگیری درخواست‌ها با ما در ارتباط باش.</p>
+          </div>
+          <span className="storageIcon">✈</span>
+        </div>
+
+        <div className="supportCard premiumSupport">
+          <div className="supportIcon">✈</div>
+          <div className="supportText">
+            <b>پشتیبانی تلگرام My Cloud</b>
+            <p>
+              برای مشکلات حساب، ارتقای فضای ذخیره‌سازی یا دریافت راهنمایی،
+              از طریق تلگرام با ما تماس بگیر.
+            </p>
+          </div>
+          <a
+            className="telegramButton"
+            href="https://t.me/MyCloudSuppor"
+            target="_blank"
+            rel="noreferrer"
+          >
+            ارتباط با پشتیبانی
+          </a>
+        </div>
+
+        <div className="settingGroup">
+          <h3>اطلاعاتی که بهتر است ارسال کنی</h3>
+          <p>برای پیگیری سریع‌تر، ایمیل حساب و شناسه اختصاصی خودت را بفرست.</p>
+          <button className="copyId" onClick={() => goTo("account")}>
+            مشاهده شناسه حساب
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <main className="shell premiumShell" id="home">
       <header className="premiumHeader">
-        <a href="#home" className="brand premiumBrand">
+        <button
+          className="brand premiumBrand"
+          onClick={goHome}
+          style={{ border: 0, background: "transparent", cursor: "pointer" }}
+        >
           <span className="cloud">☁</span>
           <span className="brandText">
             <b>My Cloud</b>
             <small>فضای ابری شخصی شما</small>
           </span>
-        </a>
+        </button>
 
         {user ? (
           <div className="headerActions">
@@ -585,6 +1076,7 @@ export default function Home() {
             </span>
             <button
               className="ghost"
+              disabled={busy}
               onClick={() => supabase.auth.signOut()}
             >
               خروج
@@ -666,462 +1158,134 @@ export default function Home() {
         </section>
       ) : (
         <>
-          <section className="dashboardHero" id="account">
-            <div className="heroContent">
-              <span className="eyebrow">داشبورد شخصی</span>
-              <h1>سلام، خوش آمدی 👋</h1>
-              <p>{user.email}</p>
-
-              {isAdmin && (
-                <div className="adminPill">★ مدیر اصلی My Cloud</div>
-              )}
-
-              {isBlocked && (
-                <div className="notice">
-                  حساب شما مسدود شده است. برای پیگیری با پشتیبانی تماس بگیر.
-                </div>
-              )}
-            </div>
-
-            <div className="heroGraphic">
-              <div className="heroCloud">☁</div>
-              <span className="heroOrbit orbitOne" />
-              <span className="heroOrbit orbitTwo" />
-            </div>
-          </section>
-
-          <section className="statsGrid">
-            <article className="statCard">
-              <span className="statIcon">▤</span>
-              <div>
-                <small>تعداد فایل‌ها</small>
-                <strong>{files.length.toLocaleString("fa-IR")}</strong>
-              </div>
-            </article>
-
-            <article className="statCard">
-              <span className="statIcon">◈</span>
-              <div>
-                <small>فضای مصرف‌شده</small>
-                <strong>{formatUsage(used)}</strong>
-              </div>
-            </article>
-
-            <article className="statCard">
-              <span className="statIcon">♙</span>
-              <div>
-                <small>نوع حساب</small>
-                <strong>{isAdmin ? "مدیر" : "شخصی"}</strong>
-              </div>
-            </article>
-          </section>
-
-          <section className="panel storagePanel">
-            <div className="sectionHeading">
-              <div>
-                <span className="eyebrow">STORAGE OVERVIEW</span>
-                <h2>فضای ذخیره‌سازی من</h2>
-              </div>
-              <span className="storageIcon">◫</span>
-            </div>
-
-            <div className="storageNumbers">
-              <div>
-                <strong>{formatUsage(used)}</strong>
-                <small>مصرف‌شده</small>
-              </div>
-              <div className="storageLimit">
-                <strong>{isAdmin ? "نامحدود" : `${formatGB(quota)} GB`}</strong>
-                <small>سقف فضای حساب</small>
-              </div>
-            </div>
-
+          {activeTab !== "home" && (
             <div
-              className="bar storageBar"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={usedPercent}
-            >
-              <i style={{ width: `${usedPercent}%` }} />
-            </div>
-
-            <div className="storageBottom">
-              <span>{usedPercent.toFixed(1)}٪ استفاده‌شده</span>
-              <span>
-                {isAdmin
-                  ? "حساب مدیر بدون محدودیت"
-                  : `${formatGB(Math.max(0, quota - used))} گیگابایت باقی‌مانده`}
-              </span>
-            </div>
-          </section>
-
-          <section className="panel uploadPanel" id="upload">
-            <div className="sectionHeading">
-              <div>
-                <span className="eyebrow">UPLOAD CENTER</span>
-                <h2>آپلود فایل جدید</h2>
-                <p>فایل‌های خودت را به فضای ابری منتقل کن.</p>
-              </div>
-              <span className="storageIcon">↑</span>
-            </div>
-
-            <label className="upload premiumUpload">
-              <span className="uploadPlus">＋</span>
-              <b>برای انتخاب فایل لمس کن</b>
-              <small>عکس، ویدئو، PDF و سایر فایل‌ها</small>
-              <input
-                type="file"
-                disabled={busy || isBlocked}
-                onChange={(e) => {
-                  const selected = e.target.files?.[0];
-                  e.target.value = "";
-                  if (selected) void upload(selected);
-                }}
-              />
-            </label>
-
-            {busy && uploadingName && (
-              <div className="uploadProgress">
-                <div className="progressTitle">
-                  <b>{uploadingName}</b>
-                  <strong>{uploadProgress}٪</strong>
-                </div>
-                <div className="bar">
-                  <i style={{ width: `${uploadProgress}%` }} />
-                </div>
-                <div className="progressDetails">
-                  <span>سرعت: {formatSpeed(uploadSpeed)}</span>
-                  <span>
-                    {uploadProgress === 100
-                      ? "در حال تکمیل..."
-                      : "در حال بارگذاری فایل"}
-                  </span>
-                </div>
-              </div>
-            )}
-          </section>
-
-          <section className="panel filesPanel" id="files">
-            <div className="sectionHeading filesSectionHeading">
-              <div>
-                <span className="eyebrow">MY FILES</span>
-                <h2>فایل‌های من</h2>
-                <p>{files.length} فایل در فضای شخصی تو</p>
-              </div>
-              <button
-                className="ghost refreshButton"
-                disabled={busy}
-                onClick={refreshFiles}
-              >
-                ↻ به‌روزرسانی
-              </button>
-            </div>
-
-            <div className="fileToolbar">
-              <span>همه فایل‌ها</span>
-              <select
-                aria-label="مرتب‌سازی فایل‌ها"
-                value={fileSort}
-                onChange={(e) => setFileSort(e.target.value)}
-              >
-                <option value="name">مرتب‌سازی بر اساس نام</option>
-                <option value="size">بزرگ‌ترین حجم</option>
-              </select>
-            </div>
-
-            {sortedFiles.length === 0 ? (
-              <div className="empty premiumEmpty">
-                <span>☁</span>
-                <b>هنوز فایلی نداری</b>
-                <p>اولین فایل خودت را آپلود کن تا اینجا نمایش داده شود.</p>
-              </div>
-            ) : (
-              <div className="fileList premiumFileList">
-                {sortedFiles.map((f) => (
-                  <article className="file premiumFile" key={f.path}>
-                    <span className="fileIcon">▤</span>
-                    <div className="fileInfo">
-                      <b title={f.path}>{f.path}</b>
-                      <small>
-                        {(
-                          Number(f.metadata?.size ?? 0) /
-                          1024 /
-                          1024
-                        ).toFixed(1)}{" "}
-                        مگابایت
-                      </small>
-                    </div>
-                    <div className="fileActions">
-                      <button
-                        className="small"
-                        disabled={busy}
-                        onClick={() => download(f.path)}
-                      >
-                        ↓ دانلود
-                      </button>
-                      <button
-                        className="delete"
-                        disabled={busy}
-                        onClick={() => remove(f.path)}
-                      >
-                        حذف
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="panel accountPanel">
-            <div className="sectionHeading">
-              <div>
-                <span className="eyebrow">ACCOUNT DETAILS</span>
-                <h2>اطلاعات حساب</h2>
-              </div>
-              <span className="storageIcon">♙</span>
-            </div>
-
-            <div className="accountDetails">
-              <div className="accountDetail">
-                <span>ایمیل</span>
-                <b>{user.email}</b>
-              </div>
-              <div className="accountDetail">
-                <span>شناسه اختصاصی</span>
-                <code>{user.id}</code>
-              </div>
-              <div className="accountDetail">
-                <span>نوع حساب</span>
-                <b>{isAdmin ? "مدیر اصلی" : "کاربر عادی"}</b>
-              </div>
-              <div className="accountDetail">
-                <span>وضعیت</span>
-                <b>{isBlocked ? "مسدود" : "فعال"}</b>
-              </div>
-            </div>
-
-            <button
-              className="copyId"
-              onClick={() => {
-                navigator.clipboard?.writeText(user.id);
-                setMessage("شناسه حساب کپی شد.");
+              className="pageTopBar"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                margin: "16px 0",
               }}
             >
-              کپی شناسه حساب
-            </button>
-          </section>
-
-          {isAdmin && (
-            <section className="panel adminPanel" id="admin">
-              <div className="sectionHeading">
-                <div>
-                  <span className="eyebrow">ADMIN CONTROL CENTER</span>
-                  <h2>پنل مدیریت</h2>
-                  <p>مدیریت کاربران و فضای ذخیره‌سازی</p>
-                </div>
-                <span className="storageIcon">♜</span>
+              <button
+                className="ghost"
+                onClick={goHome}
+                aria-label="بازگشت به خانه"
+                style={{ fontSize: 24, minWidth: 44 }}
+              >
+                ←
+              </button>
+              <div>
+                <span className="eyebrow">MY CLOUD</span>
+                <h2 style={{ margin: 0 }}>{pageNames[activeTab]}</h2>
               </div>
-
-              <div className="adminSummary">
-                <span>تعداد کل کاربران</span>
-                <strong>{adminUsers.length}</strong>
-              </div>
-
-              <label htmlFor="userSearch">جست‌وجوی کاربر</label>
-              <input
-                id="userSearch"
-                type="text"
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                placeholder="ایمیل یا شناسه کاربر..."
-              />
-
-              <div className="adminUserList">
-                {filteredUsers.length === 0 ? (
-                  <div className="empty">کاربری پیدا نشد.</div>
-                ) : (
-                  filteredUsers.map((u) => (
-                    <article className="adminUser" key={u.id}>
-                      <div className="adminUserTop">
-                        <b>{u.email || "بدون ایمیل"}</b>
-                        <span className={u.is_blocked ? "statusBlocked" : "statusActive"}>
-                          {u.is_blocked ? "مسدود" : "فعال"}
-                        </span>
-                      </div>
-
-                      <small className="adminUid">{u.id}</small>
-                      <small>
-                        نقش: {u.role === "admin" ? "مدیر" : "کاربر"}
-                      </small>
-                      <small>
-                        سهمیه فعلی: {formatGB(Number(u.quota_bytes))} گیگابایت
-                      </small>
-
-                      <label>فضا به گیگابایت</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={quotaDrafts[u.id] ?? ""}
-                        disabled={u.id === user.id || busy}
-                        onChange={(e) =>
-                          setQuotaDrafts((old) => ({
-                            ...old,
-                            [u.id]: e.target.value,
-                          }))
-                        }
-                      />
-
-                      <div className="adminActions">
-                        <button
-                          className="small"
-                          disabled={u.id === user.id || busy}
-                          onClick={() => updateQuota(u)}
-                        >
-                          ذخیره سهمیه
-                        </button>
-                        <button
-                          className={u.is_blocked ? "small" : "delete"}
-                          disabled={u.id === user.id || busy}
-                          onClick={() => toggleBlock(u)}
-                        >
-                          {u.is_blocked ? "فعال‌کردن" : "مسدودکردن"}
-                        </button>
-                      </div>
-
-                      {u.id === user.id && (
-                        <small>این حساب، حساب مدیر اصلی است.</small>
-                      )}
-                    </article>
-                  ))
-                )}
-              </div>
-            </section>
+            </div>
           )}
 
-          <section className="panel settingsPanel" id="settings">
-            <div className="sectionHeading">
-              <div>
-                <span className="eyebrow">PERSONAL SETTINGS</span>
-                <h2>تنظیمات</h2>
-                <p>شخصی‌سازی تجربه My Cloud</p>
-              </div>
-              <span className="storageIcon">⚙</span>
-            </div>
+          {activeTab === "home" && (
+            <>
+              <section className="dashboardHero">
+                <div className="heroContent">
+                  <span className="eyebrow">داشبورد شخصی</span>
+                  <h1>سلام، خوش آمدی 👋</h1>
+                  <p>{user.email}</p>
 
-            <div className="settingGroup">
-              <h3>🎨 ظاهر برنامه</h3>
-              <label htmlFor="themeSelect">پوسته برنامه</label>
-              <select
-                id="themeSelect"
-                value={theme}
-                onChange={(e) => setTheme(e.target.value as Theme)}
-              >
-                <option value="light">روشن</option>
-                <option value="dark">تیره</option>
-                <option value="system">هماهنگ با گوشی</option>
-              </select>
+                  {isAdmin && (
+                    <div className="adminPill">★ مدیر اصلی My Cloud</div>
+                  )}
 
-              <label>رنگ اصلی</label>
-              <div className="colorChoices">
-                <button
-                  type="button"
-                  className={`colorChoice blue ${accent === "blue" ? "selected" : ""}`}
-                  onClick={() => setAccent("blue")}
-                  aria-label="آبی"
-                  title="آبی"
-                />
-                <button
-                  type="button"
-                  className={`colorChoice purple ${accent === "purple" ? "selected" : ""}`}
-                  onClick={() => setAccent("purple")}
-                  aria-label="بنفش"
-                  title="بنفش"
-                />
-                <button
-                  type="button"
-                  className={`colorChoice green ${accent === "green" ? "selected" : ""}`}
-                  onClick={() => setAccent("green")}
-                  aria-label="سبز"
-                  title="سبز"
-                />
-                <button
-                  type="button"
-                  className={`colorChoice pink ${accent === "pink" ? "selected" : ""}`}
-                  onClick={() => setAccent("pink")}
-                  aria-label="صورتی"
-                  title="صورتی"
-                />
-              </div>
-              <small>تنظیمات ظاهری به‌صورت خودکار ذخیره می‌شوند.</small>
-            </div>
+                  {isBlocked && (
+                    <div className="notice">
+                      حساب شما مسدود شده است. برای پیگیری با پشتیبانی تماس بگیر.
+                    </div>
+                  )}
+                </div>
 
-            <div className="settingGroup">
-              <h3>📁 تنظیمات فایل‌ها</h3>
-              <label htmlFor="settingsFileSort">مرتب‌سازی پیش‌فرض</label>
-              <select
-                id="settingsFileSort"
-                value={fileSort}
-                onChange={(e) => setFileSort(e.target.value)}
-              >
-                <option value="name">بر اساس نام</option>
-                <option value="size">بر اساس حجم</option>
-              </select>
-            </div>
+                <div className="heroGraphic">
+                  <div className="heroCloud">☁</div>
+                  <span className="heroOrbit orbitOne" />
+                  <span className="heroOrbit orbitTwo" />
+                </div>
+              </section>
 
-            <div className="settingGroup">
-              <h3>🔐 امنیت حساب</h3>
-              <label htmlFor="newPassword">رمز عبور جدید</label>
-              <input
-                id="newPassword"
-                type="password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="حداقل ۸ کاراکتر"
-              />
+              <section className="statsGrid">
+                <article className="statCard">
+                  <span className="statIcon">▤</span>
+                  <div>
+                    <small>تعداد فایل‌ها</small>
+                    <strong>{files.length.toLocaleString("fa-IR")}</strong>
+                  </div>
+                </article>
 
-              <label htmlFor="confirmPassword">تکرار رمز جدید</label>
-              <input
-                id="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="رمز جدید را دوباره وارد کن"
-              />
+                <article className="statCard">
+                  <span className="statIcon">◈</span>
+                  <div>
+                    <small>فضای مصرف‌شده</small>
+                    <strong>{formatUsage(used)}</strong>
+                  </div>
+                </article>
 
-              <button
-                className="settingsAction"
-                disabled={busy || newPassword.length < 8 || !confirmPassword}
-                onClick={changePassword}
-              >
-                تغییر رمز عبور
-              </button>
-            </div>
+                <article className="statCard">
+                  <span className="statIcon">♙</span>
+                  <div>
+                    <small>نوع حساب</small>
+                    <strong>{isAdmin ? "مدیر" : "شخصی"}</strong>
+                  </div>
+                </article>
+              </section>
 
-            <div className="settingGroup">
-              <h3>☁ درباره My Cloud</h3>
-              <div className="accountDetail">
-                <span>نام برنامه</span>
-                <b>My Cloud</b>
-              </div>
-              <div className="accountDetail">
-                <span>نسخه سایت</span>
-                <b>2.0.0</b>
-              </div>
-              <a
-                className="settingsSupport"
-                href="https://t.me/MyCloudSuppor"
-                target="_blank"
-                rel="noreferrer"
-              >
-                ارتباط با پشتیبانی تلگرام
-              </a>
-            </div>
-          </section>
+              {renderStorage()}
+
+              <section className="panel">
+                <div className="sectionHeading">
+                  <div>
+                    <span className="eyebrow">QUICK ACCESS</span>
+                    <h2>دسترسی سریع</h2>
+                    <p>بخش موردنظرت را انتخاب کن.</p>
+                  </div>
+                </div>
+
+                <div className="quickActions">
+                  <button className="quickAction" onClick={() => goTo("upload")}>
+                    <span>＋</span>
+                    <b>آپلود فایل</b>
+                    <small>ارسال فایل جدید</small>
+                  </button>
+                  <button className="quickAction" onClick={() => goTo("files")}>
+                    <span>▤</span>
+                    <b>فایل‌های من</b>
+                    <small>مدیریت فایل‌ها</small>
+                  </button>
+                  <button className="quickAction" onClick={() => goTo("settings")}>
+                    <span>⚙</span>
+                    <b>تنظیمات</b>
+                    <small>شخصی‌سازی برنامه</small>
+                  </button>
+                  <button className="quickAction" onClick={() => goTo("support")}>
+                    <span>✈</span>
+                    <b>پشتیبانی</b>
+                    <small>ارتباط با ما</small>
+                  </button>
+                </div>
+              </section>
+            </>
+          )}
+
+          {activeTab === "upload" && renderUpload()}
+          {activeTab === "files" && renderFiles()}
+          {activeTab === "account" && renderAccount()}
+          {activeTab === "settings" && renderSettings()}
+          {activeTab === "support" && renderSupport()}
+          {activeTab === "admin" && isAdmin && renderAdmin()}
+
+          {activeTab === "admin" && !isAdmin && (
+            <section className="panel">
+              <h2>دسترسی غیرمجاز</h2>
+              <p>این بخش فقط برای مدیر سایت قابل مشاهده است.</p>
+              <button onClick={goHome}>بازگشت به خانه</button>
+            </section>
+          )}
         </>
       )}
 
@@ -1130,48 +1294,71 @@ export default function Home() {
           <a
             href="#home"
             className={activeTab === "home" ? "active" : ""}
-            onClick={() => setActiveTab("home")}
+            onClick={(e) => {
+              e.preventDefault();
+              goTo("home");
+            }}
           >
             <span>⌂</span>
             <small>خانه</small>
           </a>
+
           <a
             href="#files"
             className={activeTab === "files" ? "active" : ""}
-            onClick={() => setActiveTab("files")}
+            onClick={(e) => {
+              e.preventDefault();
+              goTo("files");
+            }}
           >
             <span>▤</span>
             <small>فایل‌ها</small>
           </a>
+
           <a
             href="#upload"
             className={activeTab === "upload" ? "active" : ""}
-            onClick={() => setActiveTab("upload")}
+            onClick={(e) => {
+              e.preventDefault();
+              goTo("upload");
+            }}
           >
             <span>＋</span>
             <small>آپلود</small>
           </a>
+
           <a
-            href="#account"
-            className={activeTab === "account" ? "active" : ""}
-            onClick={() => setActiveTab("account")}
+            href="#support"
+            className={activeTab === "support" ? "active" : ""}
+            onClick={(e) => {
+              e.preventDefault();
+              goTo("support");
+            }}
           >
-            <span>♙</span>
-            <small>حساب</small>
+            <span>✈</span>
+            <small>پشتیبانی</small>
           </a>
+
           <a
             href="#settings"
             className={activeTab === "settings" ? "active" : ""}
-            onClick={() => setActiveTab("settings")}
+            onClick={(e) => {
+              e.preventDefault();
+              goTo("settings");
+            }}
           >
             <span>⚙</span>
             <small>تنظیمات</small>
           </a>
+
           {isAdmin && (
             <a
               href="#admin"
               className={activeTab === "admin" ? "active" : ""}
-              onClick={() => setActiveTab("admin")}
+              onClick={(e) => {
+                e.preventDefault();
+                goTo("admin");
+              }}
             >
               <span>♜</span>
               <small>مدیریت</small>
@@ -1179,25 +1366,6 @@ export default function Home() {
           )}
         </nav>
       )}
-
-      <section className="supportCard premiumSupport">
-        <div className="supportIcon">✈</div>
-        <div className="supportText">
-          <b>به فضای بیشتری نیاز داری؟</b>
-          <p>
-            برای ارتقای فضای حساب یا دریافت فضای هدیه، با پشتیبانی تلگرام
-            تماس بگیر و شناسه حسابت را ارسال کن.
-          </p>
-        </div>
-        <a
-          className="telegramButton"
-          href="https://t.me/MyCloudSuppor"
-          target="_blank"
-          rel="noreferrer"
-        >
-          ارتباط با پشتیبانی
-        </a>
-      </section>
 
       {message && (
         <div className="notice messageNotice">
