@@ -495,8 +495,6 @@ export default function Home() {
     return `${(bytes / 1024).toFixed(0)} KB/s`;
   };
 
-  // نوار مدیر: هر ۱۵ گیگابایت یک چرخه کامل
-  // حداقل ۲ درصد نمایش برای دیده‌شدن رنگ سبز
   const adminBarPercent =
     used > 0
       ? used % DEFAULT_LIMIT === 0
@@ -507,7 +505,6 @@ export default function Home() {
           )
       : 0;
 
-  // نوار کاربران عادی: نسبت مصرف به سهمیه واقعی
   const userBarPercent =
     quota > 0
       ? Math.min(100, (used / quota) * 100)
@@ -523,7 +520,7 @@ export default function Home() {
   });
 
   return (
-    <main className="shell">
+    <main className="shell" id="home">
       <header>
         <div className="brand">
           <span className="cloud">☁</span>
@@ -589,7 +586,7 @@ export default function Home() {
       ) : (
         <>
           <section className="panel">
-            <div className="welcome">
+            <div className="welcome" id="account">
               <div>
                 <h1>فضای من</h1>
                 <p>{user.email}</p>
@@ -676,7 +673,7 @@ export default function Home() {
               )}
             </div>
 
-            <label className="upload">
+            <label className="upload" id="upload">
               <span>＋</span>
               <b>انتخاب و بارگذاری فایل</b>
               <small>عکس، ویدئو، PDF و فایل‌های دیگر</small>
@@ -714,7 +711,7 @@ export default function Home() {
               </div>
             )}
 
-            <div className="filesHead">
+            <div className="filesHead" id="files">
               <h2>فایل‌های من</h2>
               <button
                 className="ghost"
@@ -769,7 +766,7 @@ export default function Home() {
           </section>
 
           {isAdmin && (
-            <section className="panel adminPanel">
+            <section className="panel adminPanel" id="admin">
               <h1>★ پنل مدیریت My Cloud</h1>
               <p>مدیریت کاربران و سهمیه فضای ذخیره‌سازی</p>
 
@@ -857,6 +854,37 @@ export default function Home() {
             </section>
           )}
         </>
+      )}
+
+      {user && (
+        <nav className="bottomNav" aria-label="منوی اصلی">
+          <a href="#home">
+            <span>⌂</span>
+            <small>خانه</small>
+          </a>
+
+          <a href="#files">
+            <span>▤</span>
+            <small>فایل‌های من</small>
+          </a>
+
+          <a href="#upload">
+            <span>＋</span>
+            <small>آپلود</small>
+          </a>
+
+          <a href="#account">
+            <span>♙</span>
+            <small>حساب من</small>
+          </a>
+
+          {isAdmin && (
+            <a href="#admin">
+              <span>♜</span>
+              <small>مدیریت</small>
+            </a>
+          )}
+        </nav>
       )}
 
       <section className="supportCard">
