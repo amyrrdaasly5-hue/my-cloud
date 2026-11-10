@@ -24,6 +24,9 @@ type AdminUser = {
   created_at: string;
 };
 
+type Theme = "light" | "dark" | "system";
+type Accent = "blue" | "purple" | "green" | "pink";
+
 export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,7 +45,88 @@ export default function Home() {
   const [uploadingName, setUploadingName] = useState("");
   const [uploadSpeed, setUploadSpeed] = useState(0);
 
+  // تنظیمات شخصی
+  const [theme, setTheme] = useState<Theme>("dark");
+  const [accent, setAccent] = useState<Accent>("blue");
+  const [fileSort, setFileSort] = useState("name");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
   const speedRef = useRef({ time: 0, bytes: 0 });
+
+  // بارگذاری تنظیمات ذخیره‌شده
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem("mycloud-theme");
+      const savedAccent = localStorage.getItem("mycloud-accent");
+      const savedSort = localStorage.getItem("mycloud-file-sort");
+
+      if (
+        savedTheme === "light" ||
+        savedTheme === "dark" ||
+        savedTheme === "system"
+      ) {
+        setTheme(savedTheme);
+      }
+
+      if (
+        savedAccent === "blue" ||
+        savedAccent === "purple" ||
+        savedAccent === "green" ||
+        savedAccent === "pink"
+      ) {
+        setAccent(savedAccent);
+      }
+
+      if (
+        savedSort === "name" ||
+        savedSort === "size"
+      ) {
+        setFileSort(savedSort);
+      }
+    } catch {
+      // در صورت غیرفعال بودن ذخیره‌سازی مرورگر
+    }
+  }, []);
+
+  // اعمال پوسته و رنگ انتخاب‌شده
+  useEffect(() => {
+    const applyTheme = () => {
+      const systemDark = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+
+      const actualTheme =
+        theme === "system"
+          ? systemDark
+            ? "dark"
+            : "light"
+          : theme;
+
+      document.documentElement.dataset.theme = actualTheme;
+      document.documentElement.dataset.accent = accent;
+
+      try {
+        localStorage.setItem("mycloud-theme", theme);
+        localStorage.setItem("mycloud-accent", accent);
+        localStorage.setItem("mycloud-file-sort", fileSort);
+      } catch {
+        // ذخیره تنظیمات اختیاری است
+      }
+    };
+
+    applyTheme();
+
+    const media = window.matchMedia(
+      "(prefers-color-scheme: dark)"
+    );
+
+    media.addEventListener("change", applyTheme);
+
+    return () => {
+      media.removeEventListener("change", applyTheme);
+    };
+  }, [theme, accent, fileSort]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -240,6 +324,37 @@ export default function Home() {
       setMessage("با موفقیت وارد شدی.");
     } catch (error: any) {
       setMessage("خطا در ورود: " + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changePassword() {
+    if (newPassword.length < 8) {
+      setMessage("رمز جدید باید حداقل ۸ کاراکتر باشد.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setMessage("تکرار رمز عبور با رمز جدید یکسان نیست.");
+      return;
+    }
+
+    setBusy(true);
+    setMessage("");
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage("رمز عبور با موفقیت تغییر کرد.");
+    } catch (error: any) {
+      setMessage("خطا در تغییر رمز: " + error.message);
     } finally {
       setBusy(false);
     }
@@ -519,6 +634,17 @@ export default function Home() {
     );
   });
 
+  const sortedFiles = [...files].sort((a, b) => {
+    if (fileSort === "size") {
+      return (
+        Number(b.metadata?.size ?? 0) -
+        Number(a.metadata?.size ?? 0)
+      );
+    }
+
+    return a.path.localeCompare(b.path, "fa");
+  });
+
   return (
     <main className="shell" id="home">
       <header>
@@ -722,13 +848,25 @@ export default function Home() {
               </button>
             </div>
 
-            {files.length === 0 ? (
+            <div className="fileSort">
+              <label htmlFor="fileSort">مرتب‌سازی فایل‌ها</label>
+              <select
+                id="fileSort"
+                value={fileSort}
+                onChange={(e) => setFileSort(e.target.value)}
+              >
+                <option value="name">بر اساس نام</option>
+                <option value="size">بزرگ‌ترین حجم</option>
+              </select>
+            </div>
+
+            {sortedFiles.length === 0 ? (
               <div className="empty">
                 هنوز فایلی بارگذاری نکرده‌ای.
               </div>
             ) : (
               <div className="fileList">
-                {files.map((f) => (
+                {sortedFiles.map((f) => (
                   <div className="file" key={f.path}>
                     <span className="fileIcon">▤</span>
 
@@ -853,6 +991,159 @@ export default function Home() {
               )}
             </section>
           )}
+
+          {/* تنظیمات My Cloud */}
+          <section className="panel settingsPanel" id="settings">
+            <div className="settingsHeading">
+              <div>
+                <h1>⚙ تنظیمات</h1>
+                <p>شخصی‌سازی فضای ابری شما</p>
+              </div>
+              <span className="settingsIcon">⚙</span>
+            </div>
+
+            <div className="settingGroup">
+              <h2>🎨 ظاهر برنامه</h2>
+              <label htmlFor="themeSelect">پوسته برنامه</label>
+              <select
+                id="themeSelect"
+                value={theme}
+                onChange={(e) =>
+                  setTheme(e.target.value as Theme)
+                }
+              >
+                <option value="light">روشن - سفید</option>
+                <option value="dark">تیره</option>
+                <option value="system">هماهنگ با گوشی</option>
+              </select>
+
+              <label>رنگ اصلی برنامه</label>
+              <div className="colorChoices">
+                <button
+                  type="button"
+                  className={`colorChoice blue ${accent === "blue" ? "selected" : ""}`}
+                  onClick={() => setAccent("blue")}
+                  aria-label="آبی"
+                  title="آبی"
+                />
+                <button
+                  type="button"
+                  className={`colorChoice purple ${accent === "purple" ? "selected" : ""}`}
+                  onClick={() => setAccent("purple")}
+                  aria-label="بنفش"
+                  title="بنفش"
+                />
+                <button
+                  type="button"
+                  className={`colorChoice green ${accent === "green" ? "selected" : ""}`}
+                  onClick={() => setAccent("green")}
+                  aria-label="سبز"
+                  title="سبز"
+                />
+                <button
+                  type="button"
+                  className={`colorChoice pink ${accent === "pink" ? "selected" : ""}`}
+                  onClick={() => setAccent("pink")}
+                  aria-label="صورتی"
+                  title="صورتی"
+                />
+              </div>
+              <small>انتخاب‌های ظاهری به‌صورت خودکار ذخیره می‌شوند.</small>
+            </div>
+
+            <div className="settingGroup">
+              <h2>📁 تنظیمات فایل‌ها</h2>
+              <label htmlFor="settingsFileSort">
+                روش مرتب‌سازی پیش‌فرض
+              </label>
+              <select
+                id="settingsFileSort"
+                value={fileSort}
+                onChange={(e) => setFileSort(e.target.value)}
+              >
+                <option value="name">نام فایل</option>
+                <option value="size">حجم فایل، از بزرگ به کوچک</option>
+              </select>
+              <small>
+                این انتخاب در بخش فایل‌های من نیز اعمال می‌شود.
+              </small>
+            </div>
+
+            <div className="settingGroup">
+              <h2>🔐 امنیت حساب</h2>
+              <p>تغییر رمز عبور حساب کاربری</p>
+
+              <label htmlFor="newPassword">رمز عبور جدید</label>
+              <input
+                id="newPassword"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="حداقل ۸ کاراکتر"
+              />
+
+              <label htmlFor="confirmPassword">
+                تکرار رمز عبور جدید
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="رمز جدید را دوباره وارد کن"
+              />
+
+              <button
+                className="settingsAction"
+                disabled={
+                  busy ||
+                  newPassword.length < 8 ||
+                  !confirmPassword
+                }
+                onClick={changePassword}
+              >
+                تغییر رمز عبور
+              </button>
+            </div>
+
+            <div className="settingGroup">
+              <h2>👤 اطلاعات حساب</h2>
+              <div className="settingInfo">
+                <span>ایمیل حساب</span>
+                <b>{user.email}</b>
+              </div>
+              <div className="settingInfo">
+                <span>نوع حساب</span>
+                <b>{isAdmin ? "مدیر اصلی" : "کاربر عادی"}</b>
+              </div>
+              <div className="settingInfo">
+                <span>وضعیت حساب</span>
+                <b>{isBlocked ? "مسدود" : "فعال"}</b>
+              </div>
+            </div>
+
+            <div className="settingGroup">
+              <h2>☁ درباره My Cloud</h2>
+              <div className="settingInfo">
+                <span>نام برنامه</span>
+                <b>My Cloud</b>
+              </div>
+              <div className="settingInfo">
+                <span>نسخه سایت</span>
+                <b>1.0.0</b>
+              </div>
+              <a
+                className="settingsSupport"
+                href="https://t.me/MyCloudSuppor"
+                target="_blank"
+                rel="noreferrer"
+              >
+                ارتباط با پشتیبانی تلگرام
+              </a>
+            </div>
+          </section>
         </>
       )}
 
@@ -876,6 +1167,11 @@ export default function Home() {
           <a href="#account">
             <span>♙</span>
             <small>حساب من</small>
+          </a>
+
+          <a href="#settings">
+            <span>⚙</span>
+            <small>تنظیمات</small>
           </a>
 
           {isAdmin && (
