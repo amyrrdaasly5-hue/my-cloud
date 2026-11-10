@@ -10,15 +10,6 @@ html {
   scroll-padding-top: 25px;
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  direction: rtl;
-  font-family: 'Vazirmatn', Tahoma, Arial, sans-serif;
-  background: #080d1a;
-  color: #edf3ff;
-}
-
 :root {
   --bg: #080d1a;
   --panel: rgba(18, 28, 49, 0.88);
@@ -64,17 +55,24 @@ body {
 }
 
 body {
+  margin: 0;
+  min-height: 100vh;
+  direction: rtl;
+  font-family: 'Vazirmatn', Tahoma, Arial, sans-serif;
   background:
     radial-gradient(ellipse at 10% 0%, rgba(40, 111, 255, 0.17), transparent 35%),
     radial-gradient(ellipse at 90% 18%, rgba(122, 74, 255, 0.13), transparent 34%),
     var(--bg);
   color: var(--text);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   transition: background 0.3s, color 0.3s;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -86,6 +84,7 @@ select {
 
 button {
   cursor: pointer;
+  border: 0;
 }
 
 button:disabled,
@@ -193,10 +192,6 @@ a {
 }
 
 /* Buttons */
-
-button {
-  border: 0;
-}
 
 .ghost {
   padding: 10px 15px;
@@ -554,12 +549,14 @@ select option {
   margin: 0 0 7px;
   font-size: 21px;
   font-weight: 900;
+  line-height: 1.9;
 }
 
 .sectionHeading p {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+  line-height: 2;
 }
 
 .storageIcon {
@@ -1146,6 +1143,76 @@ select option {
   font-size: 22px;
 }
 
+/* Quick actions - اصلاح چسبیدن نوشته‌ها */
+
+.quickActions {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px !important;
+  width: 100%;
+}
+
+.quickAction {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  width: 100%;
+  min-width: 0;
+  min-height: 135px;
+  padding: 18px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 19px !important;
+  background: var(--panel2) !important;
+  color: var(--text) !important;
+  text-align: right !important;
+  white-space: normal !important;
+  line-height: 1.9 !important;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.2s, background 0.2s;
+}
+
+.quickAction > span {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  margin-bottom: 3px;
+  border-radius: 14px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 24px;
+}
+
+.quickAction b {
+  display: block !important;
+  width: 100%;
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.9;
+  white-space: normal !important;
+}
+
+.quickAction small {
+  display: block !important;
+  width: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.9;
+  white-space: normal !important;
+}
+
+.quickAction:hover {
+  border-color: var(--accent) !important;
+  transform: translateY(-2px);
+}
+
 /* Bottom navigation */
 
 .premiumNav {
@@ -1180,6 +1247,7 @@ select option {
   border-radius: 15px;
   color: var(--muted);
   transition: 0.2s;
+  white-space: nowrap;
 }
 
 .premiumNav a span {
@@ -1188,8 +1256,11 @@ select option {
 }
 
 .premiumNav a small {
+  display: block;
   font-size: 9px;
   font-weight: 700;
+  line-height: 1.7;
+  font-family: 'Vazirmatn', Tahoma, sans-serif;
 }
 
 .premiumNav a.active {
@@ -1224,6 +1295,68 @@ select option {
 .dashboardHero .notice {
   color: #ffb4c1;
   background: rgba(255, 83, 117, 0.12);
+}
+
+/* General Persian typography improvements */
+
+h1,
+h2,
+h3,
+h4,
+p,
+small,
+label,
+button,
+input,
+select,
+textarea,
+a,
+span,
+strong,
+b {
+  font-family: 'Vazirmatn', Tahoma, Arial, sans-serif;
+}
+
+p,
+small,
+label {
+  line-height: 2;
+}
+
+.sectionHeading {
+  align-items: center;
+  gap: 15px;
+}
+
+.sectionHeading h2,
+.pageTopBar h2 {
+  line-height: 1.9;
+}
+
+.pageTopBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 65px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.pageTopBar .eyebrow {
+  margin-bottom: 4px;
+}
+
+.statCard small,
+.statCard strong,
+.accountDetail span,
+.accountDetail b,
+.settingGroup h3,
+.supportText b,
+.supportText p {
+  line-height: 1.9;
 }
 
 /* Responsive */
@@ -1373,6 +1506,25 @@ select option {
   .premiumNav a small {
     font-size: 8px;
   }
+
+  .quickActions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 11px !important;
+  }
+
+  .quickAction {
+    min-height: 125px;
+    padding: 14px !important;
+    gap: 6px !important;
+  }
+
+  .quickAction b {
+    font-size: 13px;
+  }
+
+  .quickAction small {
+    font-size: 10px;
+  }
 }
 
 @media (max-width: 380px) {
@@ -1406,6 +1558,16 @@ select option {
 
   .premiumNav a small {
     font-size: 7px;
+  }
+}
+
+@media (max-width: 350px) {
+  .quickActions {
+    grid-template-columns: 1fr;
+  }
+
+  .quickAction {
+    min-height: 110px;
   }
 }
 
