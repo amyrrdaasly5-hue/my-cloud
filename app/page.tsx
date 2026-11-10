@@ -122,6 +122,18 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // تبدیل نام ذخیره‌شده به نام اصلی برای نمایش
+  function getDisplayFileName(storageName: string) {
+    // پیشوند زمانی‌ای که هنگام آپلود به نام فایل اضافه می‌کنیم حذف می‌شود.
+    const nameWithoutTimestamp = storageName.replace(/^\d+-/, "");
+
+    try {
+      return decodeURIComponent(nameWithoutTimestamp);
+    } catch {
+      return nameWithoutTimestamp;
+    }
+  }
+
   async function refreshFiles() {
     if (!user) return;
 
@@ -161,7 +173,7 @@ export default function Home() {
 
               allFiles.push({
                 id: item.id,
-                name: item.name,
+                name: getDisplayFileName(item.name),
                 path: relativePath,
                 metadata: item.metadata as FileRow["metadata"],
               });
@@ -374,8 +386,14 @@ export default function Home() {
 
       if (!anonKey) throw new Error("کلید عمومی Supabase تنظیم نشده است.");
 
-      const safeName = file.name.replace(/[^\w.\-آ-ی]/g, "_");
-      const path = `${user.id}/${Date.now()}-${safeName}`;
+      // نام فارسی به کد ASCII تبدیل می‌شود تا Supabase مسیر را قبول کند.
+      // نام اصلی فایل در رابط سایت همچنان فارسی نمایش داده خواهد شد.
+      const encodedName = encodeURIComponent(file.name).replace(
+        /[!'()*]/g,
+        (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+      );
+
+      const path = `${user.id}/${Date.now()}-${encodedName}`;
 
       await new Promise<void>((resolve, reject) => {
         const uploader = new tus.Upload(file, {
@@ -436,7 +454,8 @@ export default function Home() {
     }
   }
 
-  async function download(path: string) {
+  // نام اصلی فایل برای دانلود دریافت می‌شود؛ مسیر ذخیره‌سازی تغییر نمی‌کند.
+  async function download(path: string, fileName: string) {
     if (!user) return;
 
     const { data, error } = await supabase.storage
@@ -451,9 +470,12 @@ export default function Home() {
     const url = URL.createObjectURL(data);
     const a = document.createElement("a");
     a.href = url;
-    a.download = path.split("/").pop() || "download";
+    a.download = fileName || path.split("/").pop() || "download";
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   async function remove(path: string) {
@@ -573,7 +595,7 @@ export default function Home() {
     if (fileSort === "size") {
       return Number(b.metadata?.size ?? 0) - Number(a.metadata?.size ?? 0);
     }
-    return a.path.localeCompare(b.path, "fa");
+    return a.name.localeCompare(b.name, "fa");
   });
 
   const usedPercent = isAdmin ? adminBarPercent : userBarPercent;
@@ -731,7 +753,7 @@ export default function Home() {
               <article className="file premiumFile" key={f.path}>
                 <span className="fileIcon">▤</span>
                 <div className="fileInfo">
-                  <b title={f.path}>{f.path}</b>
+                  <b title={f.name}>{f.name}</b>
                   <small>
                     {(Number(f.metadata?.size ?? 0) / 1024 / 1024).toFixed(1)} مگابایت
                   </small>
@@ -740,7 +762,7 @@ export default function Home() {
                   <button
                     className="small"
                     disabled={busy}
-                    onClick={() => download(f.path)}
+                    onClick={() => download(f.path, f.name)}
                   >
                     ↓ دانلود
                   </button>
