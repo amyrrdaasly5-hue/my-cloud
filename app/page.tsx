@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as tus from "tus-js-client";
 import { supabase } from "@/lib/supabase";
+import FileShare from "./FileShare";
 
 const DEFAULT_LIMIT = 15 * 1024 * 1024 * 1024;
 const CHUNK_SIZE = 6 * 1024 * 1024;
@@ -743,6 +744,7 @@ export default function Home() {
                   >
                     ↓ دانلود
                   </button>
+
                   <button
                     className="delete"
                     disabled={busy}
@@ -750,6 +752,12 @@ export default function Home() {
                   >
                     حذف
                   </button>
+
+                  <FileShare
+                    userId={user.id}
+                    filePath={f.path}
+                    fileName={f.name}
+                  />
                 </div>
               </article>
             ))}
