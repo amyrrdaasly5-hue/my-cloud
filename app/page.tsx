@@ -45,63 +45,42 @@ export default function Home() {
   const [uploadingName, setUploadingName] = useState("");
   const [uploadSpeed, setUploadSpeed] = useState(0);
 
-  // تنظیمات شخصی
   const [theme, setTheme] = useState<Theme>("dark");
   const [accent, setAccent] = useState<Accent>("blue");
   const [fileSort, setFileSort] = useState("name");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  const [activeTab, setActiveTab] = useState("home");
+  const [showPassword, setShowPassword] = useState(false);
+
   const speedRef = useRef({ time: 0, bytes: 0 });
 
-  // بارگذاری تنظیمات ذخیره‌شده
   useEffect(() => {
     try {
       const savedTheme = localStorage.getItem("mycloud-theme");
       const savedAccent = localStorage.getItem("mycloud-accent");
       const savedSort = localStorage.getItem("mycloud-file-sort");
 
-      if (
-        savedTheme === "light" ||
-        savedTheme === "dark" ||
-        savedTheme === "system"
-      ) {
-        setTheme(savedTheme);
+      if (["light", "dark", "system"].includes(savedTheme || "")) {
+        setTheme(savedTheme as Theme);
       }
 
-      if (
-        savedAccent === "blue" ||
-        savedAccent === "purple" ||
-        savedAccent === "green" ||
-        savedAccent === "pink"
-      ) {
-        setAccent(savedAccent);
+      if (["blue", "purple", "green", "pink"].includes(savedAccent || "")) {
+        setAccent(savedAccent as Accent);
       }
 
-      if (
-        savedSort === "name" ||
-        savedSort === "size"
-      ) {
-        setFileSort(savedSort);
+      if (["name", "size"].includes(savedSort || "")) {
+        setFileSort(savedSort || "name");
       }
-    } catch {
-      // در صورت غیرفعال بودن ذخیره‌سازی مرورگر
-    }
+    } catch {}
   }, []);
 
-  // اعمال پوسته و رنگ انتخاب‌شده
   useEffect(() => {
     const applyTheme = () => {
-      const systemDark = window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches;
-
+      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       const actualTheme =
-        theme === "system"
-          ? systemDark
-            ? "dark"
-            : "light"
-          : theme;
+        theme === "system" ? (systemDark ? "dark" : "light") : theme;
 
       document.documentElement.dataset.theme = actualTheme;
       document.documentElement.dataset.accent = accent;
@@ -110,22 +89,15 @@ export default function Home() {
         localStorage.setItem("mycloud-theme", theme);
         localStorage.setItem("mycloud-accent", accent);
         localStorage.setItem("mycloud-file-sort", fileSort);
-      } catch {
-        // ذخیره تنظیمات اختیاری است
-      }
+      } catch {}
     };
 
     applyTheme();
 
-    const media = window.matchMedia(
-      "(prefers-color-scheme: dark)"
-    );
-
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
     media.addEventListener("change", applyTheme);
 
-    return () => {
-      media.removeEventListener("change", applyTheme);
-    };
+    return () => media.removeEventListener("change", applyTheme);
   }, [theme, accent, fileSort]);
 
   useEffect(() => {
@@ -134,9 +106,7 @@ export default function Home() {
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-      }
+      (_event, session) => setUser(session?.user ?? null)
     );
 
     return () => listener.subscription.unsubscribe();
@@ -247,7 +217,6 @@ export default function Home() {
     }
 
     const list = (users ?? []) as AdminUser[];
-
     setAdminUsers(list);
 
     setQuotaDrafts(
@@ -287,13 +256,11 @@ export default function Home() {
 
       if (error) throw error;
 
-      if (data.session) {
-        setMessage("ثبت‌نام موفق بود و وارد سایت شدی.");
-      } else {
-        setMessage(
-          "ثبت‌نام انجام شد. اگر وارد نشدی، تنظیم Confirm email را در Supabase بررسی کن."
-        );
-      }
+      setMessage(
+        data.session
+          ? "ثبت‌نام موفق بود و وارد سایت شدی."
+          : "ثبت‌نام انجام شد. اگر وارد نشدی، تنظیم Confirm email را در Supabase بررسی کن."
+      );
     } catch (error: any) {
       setMessage("خطا در ثبت‌نام: " + error.message);
     } finally {
@@ -313,11 +280,8 @@ export default function Home() {
 
       if (error) {
         if (error.message.toLowerCase().includes("email not confirmed")) {
-          throw new Error(
-            "این حساب قبلاً تأیید نشده است. حساب‌های قدیمی ممکن است به تأیید جداگانه نیاز داشته باشند."
-          );
+          throw new Error("این حساب هنوز تأیید ایمیل نشده است.");
         }
-
         throw error;
       }
 
@@ -379,10 +343,7 @@ export default function Home() {
     setUploadSpeed(0);
     setUploadingName(file.name);
 
-    speedRef.current = {
-      time: Date.now(),
-      bytes: 0,
-    };
+    speedRef.current = { time: Date.now(), bytes: 0 };
 
     try {
       const { data: sessionData, error: sessionError } =
@@ -391,24 +352,15 @@ export default function Home() {
       if (sessionError) throw sessionError;
 
       const session = sessionData.session;
-
-      if (!session) {
-        throw new Error("نشست شما منقضی شده است. دوباره وارد شو.");
-      }
+      if (!session) throw new Error("نشست شما منقضی شده است. دوباره وارد شو.");
 
       const projectUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-
-      if (!projectUrl) {
-        throw new Error("آدرس Supabase تنظیم نشده است.");
-      }
+      if (!projectUrl) throw new Error("آدرس Supabase تنظیم نشده است.");
 
       const projectId = new URL(projectUrl).hostname.split(".")[0];
-
       const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-      if (!anonKey) {
-        throw new Error("کلید عمومی Supabase تنظیم نشده است.");
-      }
+      if (!anonKey) throw new Error("کلید عمومی Supabase تنظیم نشده است.");
 
       const safeName = file.name.replace(/[^\w.\-آ-ی]/g, "_");
       const path = `${user.id}/${Date.now()}-${safeName}`;
@@ -416,30 +368,24 @@ export default function Home() {
       await new Promise<void>((resolve, reject) => {
         const uploader = new tus.Upload(file, {
           endpoint: `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`,
-
           headers: {
             authorization: `Bearer ${session.access_token}`,
             apikey: anonKey,
             "x-upsert": "false",
           },
-
           metadata: {
             bucketName: "user-files",
             objectName: path,
             contentType: file.type || "application/octet-stream",
             cacheControl: "3600",
           },
-
           chunkSize: CHUNK_SIZE,
           retryDelays: [0, 3000, 5000, 10000, 20000],
           uploadDataDuringCreation: true,
           removeFingerprintOnSuccess: true,
 
           onProgress(bytesUploaded, bytesTotal) {
-            const percent = Math.round(
-              (bytesUploaded / bytesTotal) * 100
-            );
-
+            const percent = Math.round((bytesUploaded / bytesTotal) * 100);
             setUploadProgress(percent);
 
             const now = Date.now();
@@ -450,11 +396,7 @@ export default function Home() {
                 (bytesUploaded - speedRef.current.bytes) / elapsed;
 
               setUploadSpeed(Math.max(0, speed));
-
-              speedRef.current = {
-                time: now,
-                bytes: bytesUploaded,
-              };
+              speedRef.current = { time: now, bytes: bytesUploaded };
             }
           },
 
@@ -496,17 +438,14 @@ export default function Home() {
 
     const url = URL.createObjectURL(data);
     const a = document.createElement("a");
-
     a.href = url;
     a.download = path.split("/").pop() || "download";
     a.click();
-
     URL.revokeObjectURL(url);
   }
 
   async function remove(path: string) {
     if (!user || busy) return;
-
     if (!window.confirm("آیا از حذف این فایل مطمئنی؟")) return;
 
     setBusy(true);
@@ -516,14 +455,13 @@ export default function Home() {
       .remove([`${user.id}/${path}`]);
 
     setMessage(error ? error.message : "فایل حذف شد.");
-
     await refreshFiles();
     setBusy(false);
   }
 
   async function updateQuota(target: AdminUser) {
     if (target.id === user.id) {
-      setMessage("نمی‌توانی سهمیه حساب مدیر را از این بخش تغییر بدهی.");
+      setMessage("نمی‌توانی سهمیه حساب مدیر را تغییر بدهی.");
       return;
     }
 
@@ -563,9 +501,7 @@ export default function Home() {
 
     const action = target.is_blocked ? "فعال‌کردن" : "مسدودکردن";
 
-    if (!window.confirm(`آیا از ${action} این کاربر مطمئنی؟`)) {
-      return;
-    }
+    if (!window.confirm(`آیا از ${action} این کاربر مطمئنی؟`)) return;
 
     setBusy(true);
     setMessage("");
@@ -579,12 +515,7 @@ export default function Home() {
     if (error) {
       setMessage("خطا در تغییر وضعیت: " + error.message);
     } else {
-      setMessage(
-        target.is_blocked
-          ? "کاربر فعال شد."
-          : "کاربر مسدود شد."
-      );
-
+      setMessage(target.is_blocked ? "کاربر فعال شد." : "کاربر مسدود شد.");
       await loadAccount();
     }
 
@@ -598,7 +529,6 @@ export default function Home() {
     if (bytes < 1024 * 1024 * 1024) {
       return `${(bytes / 1024 / 1024).toFixed(2)} مگابایت`;
     }
-
     return `${formatGB(bytes)} گیگابایت`;
   };
 
@@ -606,7 +536,6 @@ export default function Home() {
     if (bytes >= 1024 * 1024) {
       return `${(bytes / 1024 / 1024).toFixed(2)} MB/s`;
     }
-
     return `${(bytes / 1024).toFixed(0)} KB/s`;
   };
 
@@ -614,20 +543,14 @@ export default function Home() {
     used > 0
       ? used % DEFAULT_LIMIT === 0
         ? 100
-        : Math.max(
-            2,
-            ((used % DEFAULT_LIMIT) / DEFAULT_LIMIT) * 100
-          )
+        : Math.max(2, ((used % DEFAULT_LIMIT) / DEFAULT_LIMIT) * 100)
       : 0;
 
   const userBarPercent =
-    quota > 0
-      ? Math.min(100, (used / quota) * 100)
-      : 0;
+    quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
 
   const filteredUsers = adminUsers.filter((u) => {
     const search = userSearch.trim().toLowerCase();
-
     return (
       u.id.toLowerCase().includes(search) ||
       (u.email || "").toLowerCase().includes(search)
@@ -636,174 +559,217 @@ export default function Home() {
 
   const sortedFiles = [...files].sort((a, b) => {
     if (fileSort === "size") {
-      return (
-        Number(b.metadata?.size ?? 0) -
-        Number(a.metadata?.size ?? 0)
-      );
+      return Number(b.metadata?.size ?? 0) - Number(a.metadata?.size ?? 0);
     }
-
     return a.path.localeCompare(b.path, "fa");
   });
 
+  const usedPercent = isAdmin ? adminBarPercent : userBarPercent;
+
   return (
-    <main className="shell" id="home">
-      <header>
-        <div className="brand">
+    <main className="shell premiumShell" id="home">
+      <header className="premiumHeader">
+        <a href="#home" className="brand premiumBrand">
           <span className="cloud">☁</span>
-          <div>
+          <span className="brandText">
             <b>My Cloud</b>
             <small>فضای ابری شخصی شما</small>
-          </div>
-        </div>
+          </span>
+        </a>
 
-        {user && (
-          <button
-            className="ghost"
-            onClick={() => supabase.auth.signOut()}
-          >
-            خروج
-          </button>
+        {user ? (
+          <div className="headerActions">
+            <span className="onlineStatus">
+              <i />
+              آنلاین
+            </span>
+            <button
+              className="ghost"
+              onClick={() => supabase.auth.signOut()}
+            >
+              خروج
+            </button>
+          </div>
+        ) : (
+          <span className="secureLabel">فضای ابری امن</span>
         )}
       </header>
 
       {!user ? (
-        <section className="panel auth">
-          <div className="heroIcon">☁</div>
-          <h1>فایل‌هایت همیشه همراهت هستند</h1>
-          <p>یک حساب بساز و فایل‌هایت را امن نگه دار.</p>
-
-          <label>ایمیل</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
-          />
-
-          <label>رمز عبور</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="حداقل ۸ کاراکتر"
-          />
-
-          <div className="actions">
-            <button
-              disabled={busy || !email || password.length < 8}
-              onClick={signUp}
-            >
-              ثبت‌نام
-            </button>
-
-            <button
-              className="secondary"
-              disabled={busy || !email || password.length < 8}
-              onClick={signIn}
-            >
-              ورود
-            </button>
+        <section className="loginLayout">
+          <div className="loginIntro">
+            <span className="eyebrow">MY CLOUD STORAGE</span>
+            <h1>
+              فایل‌هایت را
+              <br />
+              <span>همیشه همراهت</span>
+              <br />
+              داشته باش.
+            </h1>
+            <p>
+              فضای شخصی تو برای نگهداری امن عکس‌ها، ویدئوها و اسناد،
+              همیشه و از هر دستگاه در دسترس.
+            </p>
+            <div className="loginFeatures">
+              <span>✓ فضای شخصی</span>
+              <span>✓ دسترسی امن</span>
+              <span>✓ مدیریت آسان فایل‌ها</span>
+            </div>
           </div>
 
-          <p className="hint">
-            هر کاربر فقط به فایل‌های حساب خودش دسترسی دارد.
-          </p>
-        </section>
-      ) : (
-        <>
-          <section className="panel">
-            <div className="welcome" id="account">
-              <div>
-                <h1>فضای من</h1>
-                <p>{user.email}</p>
-              </div>
-              <span className="avatar">●</span>
-            </div>
+          <section className="panel auth premiumAuth">
+            <div className="authLogo">☁</div>
+            <span className="eyebrow">خوش آمدی</span>
+            <h2>ورود به حساب کاربری</h2>
+            <p>برای ادامه وارد حساب خودت شو یا ثبت‌نام کن.</p>
 
-            {isAdmin && (
-              <div className="accountId">
-                <b>★ مدیر اصلی My Cloud</b>
-                <small>حساب مدیر بدون محدودیت سهمیه است.</small>
-              </div>
-            )}
+            <label htmlFor="email">آدرس ایمیل</label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              autoComplete="email"
+            />
 
-            {isBlocked && (
-              <div className="notice">
-                حساب شما مسدود شده است. برای پیگیری با پشتیبانی تماس بگیر.
-              </div>
-            )}
+            <label htmlFor="password">رمز عبور</label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="حداقل ۸ کاراکتر"
+              autoComplete="current-password"
+            />
 
-            <div className="accountId">
-              <div>
-                <b>شناسه اختصاصی حساب</b>
-                <small>
-                  برای درخواست افزایش فضا، این شناسه را برای پشتیبانی بفرست.
-                </small>
-              </div>
-
-              <code>{user.id}</code>
-
+            <div className="authButtons">
               <button
-                className="copyId"
-                onClick={() => {
-                  navigator.clipboard?.writeText(user.id);
-                  setMessage("شناسه حساب کپی شد.");
-                }}
+                disabled={busy || !email || password.length < 8}
+                onClick={signIn}
               >
-                کپی شناسه
+                {busy ? "لطفاً صبر کن..." : "ورود به حساب"}
+              </button>
+              <button
+                className="secondary"
+                disabled={busy || !email || password.length < 8}
+                onClick={signUp}
+              >
+                ساخت حساب جدید
               </button>
             </div>
 
-            <div className="usage">
-              <div className="usageTop">
-                <b>فضای ذخیره‌سازی</b>
-                <span>
-                  {formatUsage(used)} مصرف‌شده
-                  {isAdmin
-                    ? " · نامحدود"
-                    : ` از ${formatGB(quota)} گیگابایت`}
-                </span>
-              </div>
+            <div className="authFoot">
+              با ورود به My Cloud، فایل‌هایت در فضای شخصی خودت نگهداری می‌شوند.
+            </div>
+          </section>
+        </section>
+      ) : (
+        <>
+          <section className="dashboardHero" id="account">
+            <div className="heroContent">
+              <span className="eyebrow">داشبورد شخصی</span>
+              <h1>سلام، خوش آمدی 👋</h1>
+              <p>{user.email}</p>
 
-              <div
-                className="bar"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={isAdmin ? adminBarPercent : userBarPercent}
-              >
-                <i
-                  style={{
-                    width: `${
-                      isAdmin ? adminBarPercent : userBarPercent
-                    }%`,
-                  }}
-                />
-              </div>
+              {isAdmin && (
+                <div className="adminPill">★ مدیر اصلی My Cloud</div>
+              )}
 
-              {isAdmin ? (
-                <small>
-                  فضای نامحدود مدیر · هر ۱۵ گیگابایت یک نوار کامل
-                </small>
-              ) : (
-                <>
-                  <small>
-                    {userBarPercent.toFixed(2)}٪ از فضای شما پر شده است
-                  </small>
-
-                  <small>
-                    فضای باقی‌مانده:{" "}
-                    {formatGB(Math.max(0, quota - used))} گیگابایت
-                  </small>
-                </>
+              {isBlocked && (
+                <div className="notice">
+                  حساب شما مسدود شده است. برای پیگیری با پشتیبانی تماس بگیر.
+                </div>
               )}
             </div>
 
-            <label className="upload" id="upload">
-              <span>＋</span>
-              <b>انتخاب و بارگذاری فایل</b>
-              <small>عکس، ویدئو، PDF و فایل‌های دیگر</small>
+            <div className="heroGraphic">
+              <div className="heroCloud">☁</div>
+              <span className="heroOrbit orbitOne" />
+              <span className="heroOrbit orbitTwo" />
+            </div>
+          </section>
 
+          <section className="statsGrid">
+            <article className="statCard">
+              <span className="statIcon">▤</span>
+              <div>
+                <small>تعداد فایل‌ها</small>
+                <strong>{files.length.toLocaleString("fa-IR")}</strong>
+              </div>
+            </article>
+
+            <article className="statCard">
+              <span className="statIcon">◈</span>
+              <div>
+                <small>فضای مصرف‌شده</small>
+                <strong>{formatUsage(used)}</strong>
+              </div>
+            </article>
+
+            <article className="statCard">
+              <span className="statIcon">♙</span>
+              <div>
+                <small>نوع حساب</small>
+                <strong>{isAdmin ? "مدیر" : "شخصی"}</strong>
+              </div>
+            </article>
+          </section>
+
+          <section className="panel storagePanel">
+            <div className="sectionHeading">
+              <div>
+                <span className="eyebrow">STORAGE OVERVIEW</span>
+                <h2>فضای ذخیره‌سازی من</h2>
+              </div>
+              <span className="storageIcon">◫</span>
+            </div>
+
+            <div className="storageNumbers">
+              <div>
+                <strong>{formatUsage(used)}</strong>
+                <small>مصرف‌شده</small>
+              </div>
+              <div className="storageLimit">
+                <strong>{isAdmin ? "نامحدود" : `${formatGB(quota)} GB`}</strong>
+                <small>سقف فضای حساب</small>
+              </div>
+            </div>
+
+            <div
+              className="bar storageBar"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={usedPercent}
+            >
+              <i style={{ width: `${usedPercent}%` }} />
+            </div>
+
+            <div className="storageBottom">
+              <span>{usedPercent.toFixed(1)}٪ استفاده‌شده</span>
+              <span>
+                {isAdmin
+                  ? "حساب مدیر بدون محدودیت"
+                  : `${formatGB(Math.max(0, quota - used))} گیگابایت باقی‌مانده`}
+              </span>
+            </div>
+          </section>
+
+          <section className="panel uploadPanel" id="upload">
+            <div className="sectionHeading">
+              <div>
+                <span className="eyebrow">UPLOAD CENTER</span>
+                <h2>آپلود فایل جدید</h2>
+                <p>فایل‌های خودت را به فضای ابری منتقل کن.</p>
+              </div>
+              <span className="storageIcon">↑</span>
+            </div>
+
+            <label className="upload premiumUpload">
+              <span className="uploadPlus">＋</span>
+              <b>برای انتخاب فایل لمس کن</b>
+              <small>عکس، ویدئو، PDF و سایر فایل‌ها</small>
               <input
                 type="file"
                 disabled={busy || isBlocked}
@@ -816,62 +782,67 @@ export default function Home() {
             </label>
 
             {busy && uploadingName && (
-              <div className="accountId">
-                <b>در حال بارگذاری: {uploadingName}</b>
-
-                <h2>{uploadProgress}٪</h2>
-
+              <div className="uploadProgress">
+                <div className="progressTitle">
+                  <b>{uploadingName}</b>
+                  <strong>{uploadProgress}٪</strong>
+                </div>
                 <div className="bar">
                   <i style={{ width: `${uploadProgress}%` }} />
                 </div>
-
-                <small>
-                  سرعت فعلی: {formatSpeed(uploadSpeed)}
-                </small>
-
-                <small>
-                  {uploadProgress === 100
-                    ? "آپلود انجام شده؛ در حال تکمیل عملیات..."
-                    : "لطفاً تا پایان آپلود صبر کن."}
-                </small>
+                <div className="progressDetails">
+                  <span>سرعت: {formatSpeed(uploadSpeed)}</span>
+                  <span>
+                    {uploadProgress === 100
+                      ? "در حال تکمیل..."
+                      : "در حال بارگذاری فایل"}
+                  </span>
+                </div>
               </div>
             )}
+          </section>
 
-            <div className="filesHead" id="files">
-              <h2>فایل‌های من</h2>
+          <section className="panel filesPanel" id="files">
+            <div className="sectionHeading filesSectionHeading">
+              <div>
+                <span className="eyebrow">MY FILES</span>
+                <h2>فایل‌های من</h2>
+                <p>{files.length} فایل در فضای شخصی تو</p>
+              </div>
               <button
-                className="ghost"
+                className="ghost refreshButton"
                 disabled={busy}
                 onClick={refreshFiles}
               >
-                به‌روزرسانی
+                ↻ به‌روزرسانی
               </button>
             </div>
 
-            <div className="fileSort">
-              <label htmlFor="fileSort">مرتب‌سازی فایل‌ها</label>
+            <div className="fileToolbar">
+              <span>همه فایل‌ها</span>
               <select
-                id="fileSort"
+                aria-label="مرتب‌سازی فایل‌ها"
                 value={fileSort}
                 onChange={(e) => setFileSort(e.target.value)}
               >
-                <option value="name">بر اساس نام</option>
+                <option value="name">مرتب‌سازی بر اساس نام</option>
                 <option value="size">بزرگ‌ترین حجم</option>
               </select>
             </div>
 
             {sortedFiles.length === 0 ? (
-              <div className="empty">
-                هنوز فایلی بارگذاری نکرده‌ای.
+              <div className="empty premiumEmpty">
+                <span>☁</span>
+                <b>هنوز فایلی نداری</b>
+                <p>اولین فایل خودت را آپلود کن تا اینجا نمایش داده شود.</p>
               </div>
             ) : (
-              <div className="fileList">
+              <div className="fileList premiumFileList">
                 {sortedFiles.map((f) => (
-                  <div className="file" key={f.path}>
+                  <article className="file premiumFile" key={f.path}>
                     <span className="fileIcon">▤</span>
-
                     <div className="fileInfo">
-                      <b>{f.path}</b>
+                      <b title={f.path}>{f.path}</b>
                       <small>
                         {(
                           Number(f.metadata?.size ?? 0) /
@@ -881,143 +852,179 @@ export default function Home() {
                         مگابایت
                       </small>
                     </div>
-
-                    <button
-                      className="small"
-                      disabled={busy}
-                      onClick={() => download(f.path)}
-                    >
-                      دانلود
-                    </button>
-
-                    <button
-                      className="delete"
-                      disabled={busy}
-                      onClick={() => remove(f.path)}
-                    >
-                      حذف
-                    </button>
-                  </div>
+                    <div className="fileActions">
+                      <button
+                        className="small"
+                        disabled={busy}
+                        onClick={() => download(f.path)}
+                      >
+                        ↓ دانلود
+                      </button>
+                      <button
+                        className="delete"
+                        disabled={busy}
+                        onClick={() => remove(f.path)}
+                      >
+                        حذف
+                      </button>
+                    </div>
+                  </article>
                 ))}
               </div>
             )}
           </section>
 
+          <section className="panel accountPanel">
+            <div className="sectionHeading">
+              <div>
+                <span className="eyebrow">ACCOUNT DETAILS</span>
+                <h2>اطلاعات حساب</h2>
+              </div>
+              <span className="storageIcon">♙</span>
+            </div>
+
+            <div className="accountDetails">
+              <div className="accountDetail">
+                <span>ایمیل</span>
+                <b>{user.email}</b>
+              </div>
+              <div className="accountDetail">
+                <span>شناسه اختصاصی</span>
+                <code>{user.id}</code>
+              </div>
+              <div className="accountDetail">
+                <span>نوع حساب</span>
+                <b>{isAdmin ? "مدیر اصلی" : "کاربر عادی"}</b>
+              </div>
+              <div className="accountDetail">
+                <span>وضعیت</span>
+                <b>{isBlocked ? "مسدود" : "فعال"}</b>
+              </div>
+            </div>
+
+            <button
+              className="copyId"
+              onClick={() => {
+                navigator.clipboard?.writeText(user.id);
+                setMessage("شناسه حساب کپی شد.");
+              }}
+            >
+              کپی شناسه حساب
+            </button>
+          </section>
+
           {isAdmin && (
             <section className="panel adminPanel" id="admin">
-              <h1>★ پنل مدیریت My Cloud</h1>
-              <p>مدیریت کاربران و سهمیه فضای ذخیره‌سازی</p>
-
-              <div className="filesHead">
-                <h2>کاربران سایت</h2>
-                <button
-                  className="ghost"
-                  disabled={busy}
-                  onClick={loadAccount}
-                >
-                  به‌روزرسانی
-                </button>
+              <div className="sectionHeading">
+                <div>
+                  <span className="eyebrow">ADMIN CONTROL CENTER</span>
+                  <h2>پنل مدیریت</h2>
+                  <p>مدیریت کاربران و فضای ذخیره‌سازی</p>
+                </div>
+                <span className="storageIcon">♜</span>
               </div>
 
-              <p>تعداد کل کاربران: {adminUsers.length}</p>
+              <div className="adminSummary">
+                <span>تعداد کل کاربران</span>
+                <strong>{adminUsers.length}</strong>
+              </div>
 
-              <label>جست‌وجو با ایمیل یا شناسه کاربر</label>
+              <label htmlFor="userSearch">جست‌وجوی کاربر</label>
               <input
+                id="userSearch"
                 type="text"
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
-                placeholder="ایمیل یا UID را وارد کن..."
+                placeholder="ایمیل یا شناسه کاربر..."
               />
 
-              <p>نتایج پیدا شده: {filteredUsers.length}</p>
+              <div className="adminUserList">
+                {filteredUsers.length === 0 ? (
+                  <div className="empty">کاربری پیدا نشد.</div>
+                ) : (
+                  filteredUsers.map((u) => (
+                    <article className="adminUser" key={u.id}>
+                      <div className="adminUserTop">
+                        <b>{u.email || "بدون ایمیل"}</b>
+                        <span className={u.is_blocked ? "statusBlocked" : "statusActive"}>
+                          {u.is_blocked ? "مسدود" : "فعال"}
+                        </span>
+                      </div>
 
-              {filteredUsers.length === 0 ? (
-                <div className="empty">
-                  کاربری با این مشخصات پیدا نشد.
-                </div>
-              ) : (
-                filteredUsers.map((u) => (
-                  <div className="accountId" key={u.id}>
-                    <div>
-                      <b>{u.email || "بدون ایمیل"}</b>
-                      <small>{u.id}</small>
+                      <small className="adminUid">{u.id}</small>
                       <small>
                         نقش: {u.role === "admin" ? "مدیر" : "کاربر"}
-                        {" · "}
-                        وضعیت: {u.is_blocked ? "مسدود" : "فعال"}
                       </small>
                       <small>
                         سهمیه فعلی: {formatGB(Number(u.quota_bytes))} گیگابایت
                       </small>
-                    </div>
 
-                    <label>فضا (گیگابایت)</label>
+                      <label>فضا به گیگابایت</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={quotaDrafts[u.id] ?? ""}
+                        disabled={u.id === user.id || busy}
+                        onChange={(e) =>
+                          setQuotaDrafts((old) => ({
+                            ...old,
+                            [u.id]: e.target.value,
+                          }))
+                        }
+                      />
 
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={quotaDrafts[u.id] ?? ""}
-                      disabled={u.id === user.id || busy}
-                      onChange={(e) =>
-                        setQuotaDrafts((old) => ({
-                          ...old,
-                          [u.id]: e.target.value,
-                        }))
-                      }
-                    />
+                      <div className="adminActions">
+                        <button
+                          className="small"
+                          disabled={u.id === user.id || busy}
+                          onClick={() => updateQuota(u)}
+                        >
+                          ذخیره سهمیه
+                        </button>
+                        <button
+                          className={u.is_blocked ? "small" : "delete"}
+                          disabled={u.id === user.id || busy}
+                          onClick={() => toggleBlock(u)}
+                        >
+                          {u.is_blocked ? "فعال‌کردن" : "مسدودکردن"}
+                        </button>
+                      </div>
 
-                    <button
-                      className="small"
-                      disabled={u.id === user.id || busy}
-                      onClick={() => updateQuota(u)}
-                    >
-                      ذخیره فضا
-                    </button>
-
-                    <button
-                      className={u.is_blocked ? "small" : "delete"}
-                      disabled={u.id === user.id || busy}
-                      onClick={() => toggleBlock(u)}
-                    >
-                      {u.is_blocked ? "فعال‌کردن کاربر" : "مسدودکردن کاربر"}
-                    </button>
-
-                    {u.id === user.id && (
-                      <small>این حساب، حساب مدیر اصلی است.</small>
-                    )}
-                  </div>
-                ))
-              )}
+                      {u.id === user.id && (
+                        <small>این حساب، حساب مدیر اصلی است.</small>
+                      )}
+                    </article>
+                  ))
+                )}
+              </div>
             </section>
           )}
 
-          {/* تنظیمات My Cloud */}
           <section className="panel settingsPanel" id="settings">
-            <div className="settingsHeading">
+            <div className="sectionHeading">
               <div>
-                <h1>⚙ تنظیمات</h1>
-                <p>شخصی‌سازی فضای ابری شما</p>
+                <span className="eyebrow">PERSONAL SETTINGS</span>
+                <h2>تنظیمات</h2>
+                <p>شخصی‌سازی تجربه My Cloud</p>
               </div>
-              <span className="settingsIcon">⚙</span>
+              <span className="storageIcon">⚙</span>
             </div>
 
             <div className="settingGroup">
-              <h2>🎨 ظاهر برنامه</h2>
+              <h3>🎨 ظاهر برنامه</h3>
               <label htmlFor="themeSelect">پوسته برنامه</label>
               <select
                 id="themeSelect"
                 value={theme}
-                onChange={(e) =>
-                  setTheme(e.target.value as Theme)
-                }
+                onChange={(e) => setTheme(e.target.value as Theme)}
               >
-                <option value="light">روشن - سفید</option>
+                <option value="light">روشن</option>
                 <option value="dark">تیره</option>
                 <option value="system">هماهنگ با گوشی</option>
               </select>
 
-              <label>رنگ اصلی برنامه</label>
+              <label>رنگ اصلی</label>
               <div className="colorChoices">
                 <button
                   type="button"
@@ -1048,31 +1055,24 @@ export default function Home() {
                   title="صورتی"
                 />
               </div>
-              <small>انتخاب‌های ظاهری به‌صورت خودکار ذخیره می‌شوند.</small>
+              <small>تنظیمات ظاهری به‌صورت خودکار ذخیره می‌شوند.</small>
             </div>
 
             <div className="settingGroup">
-              <h2>📁 تنظیمات فایل‌ها</h2>
-              <label htmlFor="settingsFileSort">
-                روش مرتب‌سازی پیش‌فرض
-              </label>
+              <h3>📁 تنظیمات فایل‌ها</h3>
+              <label htmlFor="settingsFileSort">مرتب‌سازی پیش‌فرض</label>
               <select
                 id="settingsFileSort"
                 value={fileSort}
                 onChange={(e) => setFileSort(e.target.value)}
               >
-                <option value="name">نام فایل</option>
-                <option value="size">حجم فایل، از بزرگ به کوچک</option>
+                <option value="name">بر اساس نام</option>
+                <option value="size">بر اساس حجم</option>
               </select>
-              <small>
-                این انتخاب در بخش فایل‌های من نیز اعمال می‌شود.
-              </small>
             </div>
 
             <div className="settingGroup">
-              <h2>🔐 امنیت حساب</h2>
-              <p>تغییر رمز عبور حساب کاربری</p>
-
+              <h3>🔐 امنیت حساب</h3>
               <label htmlFor="newPassword">رمز عبور جدید</label>
               <input
                 id="newPassword"
@@ -1083,9 +1083,7 @@ export default function Home() {
                 placeholder="حداقل ۸ کاراکتر"
               />
 
-              <label htmlFor="confirmPassword">
-                تکرار رمز عبور جدید
-              </label>
+              <label htmlFor="confirmPassword">تکرار رمز جدید</label>
               <input
                 id="confirmPassword"
                 type="password"
@@ -1097,11 +1095,7 @@ export default function Home() {
 
               <button
                 className="settingsAction"
-                disabled={
-                  busy ||
-                  newPassword.length < 8 ||
-                  !confirmPassword
-                }
+                disabled={busy || newPassword.length < 8 || !confirmPassword}
                 onClick={changePassword}
               >
                 تغییر رمز عبور
@@ -1109,30 +1103,14 @@ export default function Home() {
             </div>
 
             <div className="settingGroup">
-              <h2>👤 اطلاعات حساب</h2>
-              <div className="settingInfo">
-                <span>ایمیل حساب</span>
-                <b>{user.email}</b>
-              </div>
-              <div className="settingInfo">
-                <span>نوع حساب</span>
-                <b>{isAdmin ? "مدیر اصلی" : "کاربر عادی"}</b>
-              </div>
-              <div className="settingInfo">
-                <span>وضعیت حساب</span>
-                <b>{isBlocked ? "مسدود" : "فعال"}</b>
-              </div>
-            </div>
-
-            <div className="settingGroup">
-              <h2>☁ درباره My Cloud</h2>
-              <div className="settingInfo">
+              <h3>☁ درباره My Cloud</h3>
+              <div className="accountDetail">
                 <span>نام برنامه</span>
                 <b>My Cloud</b>
               </div>
-              <div className="settingInfo">
+              <div className="accountDetail">
                 <span>نسخه سایت</span>
-                <b>1.0.0</b>
+                <b>2.0.0</b>
               </div>
               <a
                 className="settingsSupport"
@@ -1148,34 +1126,53 @@ export default function Home() {
       )}
 
       {user && (
-        <nav className="bottomNav" aria-label="منوی اصلی">
-          <a href="#home">
+        <nav className="bottomNav premiumNav" aria-label="منوی اصلی">
+          <a
+            href="#home"
+            className={activeTab === "home" ? "active" : ""}
+            onClick={() => setActiveTab("home")}
+          >
             <span>⌂</span>
             <small>خانه</small>
           </a>
-
-          <a href="#files">
+          <a
+            href="#files"
+            className={activeTab === "files" ? "active" : ""}
+            onClick={() => setActiveTab("files")}
+          >
             <span>▤</span>
-            <small>فایل‌های من</small>
+            <small>فایل‌ها</small>
           </a>
-
-          <a href="#upload">
+          <a
+            href="#upload"
+            className={activeTab === "upload" ? "active" : ""}
+            onClick={() => setActiveTab("upload")}
+          >
             <span>＋</span>
             <small>آپلود</small>
           </a>
-
-          <a href="#account">
+          <a
+            href="#account"
+            className={activeTab === "account" ? "active" : ""}
+            onClick={() => setActiveTab("account")}
+          >
             <span>♙</span>
-            <small>حساب من</small>
+            <small>حساب</small>
           </a>
-
-          <a href="#settings">
+          <a
+            href="#settings"
+            className={activeTab === "settings" ? "active" : ""}
+            onClick={() => setActiveTab("settings")}
+          >
             <span>⚙</span>
             <small>تنظیمات</small>
           </a>
-
           {isAdmin && (
-            <a href="#admin">
+            <a
+              href="#admin"
+              className={activeTab === "admin" ? "active" : ""}
+              onClick={() => setActiveTab("admin")}
+            >
               <span>♜</span>
               <small>مدیریت</small>
             </a>
@@ -1183,16 +1180,15 @@ export default function Home() {
         </nav>
       )}
 
-      <section className="supportCard">
+      <section className="supportCard premiumSupport">
         <div className="supportIcon">✈</div>
         <div className="supportText">
-          <b>نیاز به فضای ذخیره‌سازی بیشتر داری؟</b>
+          <b>به فضای بیشتری نیاز داری؟</b>
           <p>
             برای ارتقای فضای حساب یا دریافت فضای هدیه، با پشتیبانی تلگرام
             تماس بگیر و شناسه حسابت را ارسال کن.
           </p>
         </div>
-
         <a
           className="telegramButton"
           href="https://t.me/MyCloudSuppor"
@@ -1203,10 +1199,17 @@ export default function Home() {
         </a>
       </section>
 
-      {message && <div className="notice">{message}</div>}
+      {message && (
+        <div className="notice messageNotice">
+          <span>{message}</span>
+          <button onClick={() => setMessage("")}>×</button>
+        </div>
+      )}
 
-      <footer>
-        My Cloud · فضای شخصی، همیشه در دسترس · پشتیبانی: @MyCloudSuppor
+      <footer className="premiumFooter">
+        <b>☁ My Cloud</b>
+        <span>فضای شخصی، همیشه در دسترس</span>
+        <small>پشتیبانی: @MyCloudSuppor</small>
       </footer>
     </main>
   );
