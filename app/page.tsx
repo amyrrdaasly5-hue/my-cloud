@@ -23,11 +23,33 @@ type AdminUser = {
   quota_bytes: number;
   is_blocked: boolean;
   created_at: string;
+  file_count: number;
+  used_bytes: number;
+  free_bytes: number;
+  last_seen: string | null;
+  is_online: boolean;
+};
+
+type AdminStats = {
+  user_id: string;
+  file_count: number;
+  used_bytes: number;
+  quota_bytes: number;
+  free_bytes: number;
+  last_seen: string | null;
+  is_online: boolean;
 };
 
 type Theme = "light" | "dark" | "system";
 type Accent = "blue" | "purple" | "green" | "pink";
-type Page = "home" | "files" | "upload" | "support" | "account" | "settings" | "admin";
+type Page =
+  | "home"
+  | "files"
+  | "upload"
+  | "support"
+  | "account"
+  | "settings"
+  | "admin";
 
 // تبدیل نام فارسی به کد ASCII امن برای ذخیره‌سازی
 function encodeFileName(fileName: string) {
@@ -75,7 +97,6 @@ function getDisplayFileName(storageName: string) {
     }
   }
 
-  // پشتیبانی از فایل‌های قدیمی
   try {
     return decodeURIComponent(nameWithoutTimestamp);
   } catch {
@@ -108,6 +129,7 @@ export default function Home() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [activeTab, setActiveTab] = useState<Page>("home");
+  const [adminRefreshing, setAdminRefreshing] = useState(false);
 
   const speedRef = useRef({ time: 0, bytes: 0 });
 
@@ -142,7 +164,10 @@ export default function Home() {
 
   useEffect(() => {
     const applyTheme = () => {
-      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const systemDark = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+
       const actualTheme =
         theme === "system" ? (systemDark ? "dark" : "light") : theme;
 
@@ -175,6 +200,51 @@ export default function Home() {
 
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // ثبت آخرین بازدید و به‌روزرسانی وضعیت آنلاین
+  useEffect(() => {
+    if (!user) return;
+
+    let active = true;
+
+    const updateLastSeen = async () => {
+      if (!active || document.visibilityState !== "visible") return;
+
+      const { error } = await supabase
+        .from("user_activity")
+        .upsert(
+          {
+            user_id: user.id,
+            last_seen: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        );
+
+      if (error) {
+        console.error("خطا در ثبت آخرین بازدید:", error.message);
+      }
+    };
+
+    void updateLastSeen();
+
+    const interval = window.setInterval(() => {
+      void updateLastSeen();
+    }, 60000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void updateLastSeen();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [user]);
 
   async function refreshFiles() {
     if (!user) return;
@@ -234,6 +304,52 @@ export default function Home() {
     }
   }
 
+  // دریافت آمار جدید کاربران از دیتابیس
+  async function refreshAdminStats(showMessage = false) {
+    if (!isAdmin) return;
+
+    setAdminRefreshing(true);
+
+    try {
+      const { data, error } = await supabase.rpc("admin_get_user_stats");
+
+      if (error) throw error;
+
+      const stats = (data ?? []) as AdminStats[];
+
+      const statsMap = new Map(
+        stats.map((item) => [item.user_id, item])
+      );
+
+      setAdminUsers((oldUsers) =>
+        oldUsers.map((u) => {
+          const stat = statsMap.get(u.id);
+
+          if (!stat) return u;
+
+          return {
+            ...u,
+            file_count: Number(stat.file_count ?? 0),
+            used_bytes: Number(stat.used_bytes ?? 0),
+            free_bytes: Number(stat.free_bytes ?? 0),
+            last_seen: stat.last_seen ?? null,
+            is_online: stat.is_online === true,
+          };
+        })
+      );
+
+      if (showMessage) {
+        setMessage("آمار کاربران به‌روزرسانی شد.");
+      }
+    } catch (error: any) {
+      if (showMessage) {
+        setMessage("خطا در دریافت آمار کاربران: " + error.message);
+      }
+    } finally {
+      setAdminRefreshing(false);
+    }
+  }
+
   async function loadAccount() {
     if (!user) return;
 
@@ -280,7 +396,33 @@ export default function Home() {
       return;
     }
 
-    const list = (users ?? []) as AdminUser[];
+    const { data: statsData, error: statsError } =
+      await supabase.rpc("admin_get_user_stats");
+
+    if (statsError) {
+      setMessage("خطا در دریافت آمار کاربران: " + statsError.message);
+      return;
+    }
+
+    const stats = (statsData ?? []) as AdminStats[];
+    const statsMap = new Map(
+      stats.map((item) => [item.user_id, item])
+    );
+
+    const list = ((users ?? []) as any[]).map((u) => {
+      const stat = statsMap.get(u.id);
+
+      return {
+        ...u,
+        quota_bytes: Number(u.quota_bytes ?? DEFAULT_LIMIT),
+        file_count: Number(stat?.file_count ?? 0),
+        used_bytes: Number(stat?.used_bytes ?? 0),
+        free_bytes: Number(stat?.free_bytes ?? u.quota_bytes ?? DEFAULT_LIMIT),
+        last_seen: stat?.last_seen ?? null,
+        is_online: stat?.is_online === true,
+      } as AdminUser;
+    });
+
     setAdminUsers(list);
 
     setQuotaDrafts(
@@ -308,6 +450,17 @@ export default function Home() {
       setActiveTab("home");
     }
   }, [user]);
+
+  // به‌روزرسانی خودکار آمار هنگام باز بودن پنل مدیریت
+  useEffect(() => {
+    if (!user || !isAdmin || activeTab !== "admin") return;
+
+    const interval = window.setInterval(() => {
+      void refreshAdminStats();
+    }, 30000);
+
+    return () => window.clearInterval(interval);
+  }, [user, isAdmin, activeTab]);
 
   async function signUp() {
     setBusy(true);
@@ -428,7 +581,6 @@ export default function Home() {
 
       if (!anonKey) throw new Error("کلید عمومی Supabase تنظیم نشده است.");
 
-      // نام ذخیره‌شده فقط ASCII است؛ نام اصلی فارسی جداگانه بازسازی می‌شود.
       const safeName = encodeFileName(file.name);
       const path = `${user.id}/${Date.now()}-${safeName}`;
 
@@ -482,6 +634,10 @@ export default function Home() {
 
       setMessage("فایل با موفقیت بارگذاری شد.");
       await refreshFiles();
+
+      if (isAdmin) {
+        await refreshAdminStats();
+      }
     } catch (error: any) {
       setMessage("خطا در آپلود: " + error.message);
     } finally {
@@ -526,6 +682,11 @@ export default function Home() {
 
     setMessage(error ? error.message : "فایل حذف شد.");
     await refreshFiles();
+
+    if (isAdmin) {
+      await refreshAdminStats();
+    }
+
     setBusy(false);
   }
 
@@ -593,7 +754,7 @@ export default function Home() {
   }
 
   const formatGB = (bytes: number) =>
-    (bytes / 1024 / 1024 / 1024).toFixed(2);
+    (Number(bytes || 0) / 1024 / 1024 / 1024).toFixed(2);
 
   const formatUsage = (bytes: number) => {
     if (bytes < 1024 * 1024 * 1024) {
@@ -609,6 +770,22 @@ export default function Home() {
     return `${(bytes / 1024).toFixed(0)} KB/s`;
   };
 
+  function formatLastSeen(value: string | null) {
+    if (!value) return "هنوز وارد نشده";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "نامشخص";
+
+    return date.toLocaleString("fa-IR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
   const adminBarPercent =
     used > 0
       ? used % DEFAULT_LIMIT === 0
@@ -621,6 +798,7 @@ export default function Home() {
 
   const filteredUsers = adminUsers.filter((u) => {
     const search = userSearch.trim().toLowerCase();
+
     return (
       u.id.toLowerCase().includes(search) ||
       (u.email || "").toLowerCase().includes(search)
@@ -631,6 +809,7 @@ export default function Home() {
     if (fileSort === "size") {
       return Number(b.metadata?.size ?? 0) - Number(a.metadata?.size ?? 0);
     }
+
     return a.name.localeCompare(b.name, "fa");
   });
 
@@ -990,6 +1169,12 @@ export default function Home() {
   }
 
   function renderAdmin() {
+    const onlineCount = adminUsers.filter((u) => u.is_online).length;
+    const totalUsed = adminUsers.reduce(
+      (sum, u) => sum + Number(u.used_bytes || 0),
+      0
+    );
+
     return (
       <section className="panel adminPanel">
         <div className="sectionHeading">
@@ -998,12 +1183,28 @@ export default function Home() {
             <h2>پنل مدیریت</h2>
             <p>مدیریت کاربران و فضای ذخیره‌سازی</p>
           </div>
-          <span className="storageIcon">♜</span>
+          <button
+            className="ghost refreshButton"
+            disabled={adminRefreshing}
+            onClick={() => refreshAdminStats(true)}
+          >
+            {adminRefreshing ? "در حال دریافت..." : "↻ به‌روزرسانی آمار"}
+          </button>
         </div>
 
         <div className="adminSummary">
           <span>تعداد کل کاربران</span>
-          <strong>{adminUsers.length}</strong>
+          <strong>{adminUsers.length.toLocaleString("fa-IR")}</strong>
+        </div>
+
+        <div className="adminSummary">
+          <span>کاربران آنلاین</span>
+          <strong>{onlineCount.toLocaleString("fa-IR")}</strong>
+        </div>
+
+        <div className="adminSummary">
+          <span>مجموع فضای مصرف‌شده</span>
+          <strong>{formatUsage(totalUsed)}</strong>
         </div>
 
         <label htmlFor="userSearch">جست‌وجوی کاربر</label>
@@ -1028,11 +1229,50 @@ export default function Home() {
                   </span>
                 </div>
 
+                <div className="adminSummary">
+                  <span>وضعیت حضور</span>
+                  <strong
+                    style={{
+                      color: u.is_online ? "#16a34a" : "#9ca3af",
+                    }}
+                  >
+                    {u.is_online ? "● آنلاین" : "○ آفلاین"}
+                  </strong>
+                </div>
+
                 <small className="adminUid">{u.id}</small>
-                <small>نقش: {u.role === "admin" ? "مدیر" : "کاربر"}</small>
+
                 <small>
-                  سهمیه فعلی: {formatGB(Number(u.quota_bytes))} گیگابایت
+                  آخرین بازدید: {formatLastSeen(u.last_seen)}
                 </small>
+
+                <small>
+                  نقش: {u.role === "admin" ? "مدیر" : "کاربر"}
+                </small>
+
+                <div className="adminSummary">
+                  <span>تعداد فایل‌ها</span>
+                  <strong>
+                    {Number(u.file_count || 0).toLocaleString("fa-IR")}
+                  </strong>
+                </div>
+
+                <div className="adminSummary">
+                  <span>حجم مصرف‌شده</span>
+                  <strong>{formatUsage(Number(u.used_bytes || 0))}</strong>
+                </div>
+
+                <div className="adminSummary">
+                  <span>سهمیه کل</span>
+                  <strong>{formatGB(Number(u.quota_bytes))} گیگابایت</strong>
+                </div>
+
+                <div className="adminSummary">
+                  <span>فضای باقی‌مانده</span>
+                  <strong>
+                    {formatUsage(Number(u.free_bytes || 0))}
+                  </strong>
+                </div>
 
                 <label>فضا به گیگابایت</label>
                 <input
