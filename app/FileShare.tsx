@@ -30,7 +30,6 @@ export default function FileShare({
   const [message, setMessage] = useState("");
 
   const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
-
   const storageKey = `mycloud_hidden_shares_${userId}_${filePath}`;
 
   useEffect(() => {
@@ -119,22 +118,10 @@ export default function FileShare({
     try {
       localStorage.setItem(storageKey, JSON.stringify(updated));
     } catch {
-      // مخفی‌سازی در همین نشست همچنان انجام می‌شود.
+      // مخفی‌سازی در همین نشست انجام می‌شود.
     }
 
-    setMessage("لینک از فهرست مخفی شد؛ خود لینک همچنان فعال است.");
-  }
-
-  function restoreHiddenShares() {
-    setHiddenIds([]);
-
-    try {
-      localStorage.removeItem(storageKey);
-    } catch {
-      // نادیده گرفتن خطای ذخیره‌سازی محلی
-    }
-
-    setMessage("لینک‌های مخفی‌شده دوباره نمایش داده می‌شوند.");
+    setMessage("لینک از فهرست حذف شد.");
   }
 
   return (
@@ -222,8 +209,8 @@ export default function FileShare({
                 <button
                   type="button"
                   onClick={() => hideShare(share.id)}
-                  title="مخفی کردن لینک از فهرست"
-                  aria-label="مخفی کردن لینک"
+                  title="حذف از فهرست"
+                  aria-label="حذف از فهرست"
                   style={{
                     width: 30,
                     height: 30,
@@ -275,23 +262,6 @@ export default function FileShare({
             </div>
           );
         })}
-
-      {hiddenIds.length > 0 && (
-        <button
-          type="button"
-          onClick={restoreHiddenShares}
-          style={{
-            padding: 8,
-            border: "1px solid #64748b",
-            borderRadius: 7,
-            background: "transparent",
-            color: "white",
-            cursor: "pointer",
-          }}
-        >
-          نمایش دوباره لینک‌های مخفی‌شده
-        </button>
-      )}
 
       {message && (
         <span style={{ fontSize: 12 }}>{message}</span>
