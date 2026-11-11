@@ -23,6 +23,7 @@ type AdminUser = {
   quota_bytes: number;
   is_blocked: boolean;
   created_at: string;
+  display_name: string | null;
   file_count: number;
   used_bytes: number;
   free_bytes: number;
@@ -38,6 +39,11 @@ type AdminStats = {
   free_bytes: number;
   last_seen: string | null;
   is_online: boolean;
+};
+
+type AdminName = {
+  user_id: string;
+  display_name: string | null;
 };
 
 type Theme = "light" | "dark" | "system";
@@ -108,6 +114,12 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [user, setUser] = useState<any>(null);
+
+  const [displayName, setDisplayName] = useState("");
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [nameSetupRequired, setNameSetupRequired] = useState(false);
+  const [nameSaving, setNameSaving] = useState(false);
+
   const [files, setFiles] = useState<FileRow[]>([]);
   const [used, setUsed] = useState(0);
   const [quota, setQuota] = useState(DEFAULT_LIMIT);
@@ -191,11 +203,21 @@ export default function Home() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null);
+      const currentUser = data.session?.user ?? null;
+      setUser(currentUser);
+      setNameSetupRequired(
+        currentUser?.user_metadata?.display_name_required === true
+      );
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => setUser(session?.user ?? null)
+      (_event, session) => {
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        setNameSetupRequired(
+          currentUser?.user_metadata?.display_name_required === true
+        );
+      }
     );
 
     return () => listener.subscription.unsubscribe();
@@ -304,46 +326,57 @@ export default function Home() {
     }
   }
 
-  // دریافت آمار جدید کاربران از دیتابیس
+  // دریافت آمار و نام کاربران از دیتابیس
   async function refreshAdminStats(showMessage = false) {
     if (!isAdmin) return;
 
     setAdminRefreshing(true);
 
     try {
-      const { data, error } = await supabase.rpc("admin_get_user_stats");
+      const [
+        { data: statsData, error: statsError },
+        { data: namesData, error: namesError },
+      ] = await Promise.all([
+        supabase.rpc("admin_get_user_stats"),
+        supabase.rpc("admin_get_user_names"),
+      ]);
 
-      if (error) throw error;
+      if (statsError) throw statsError;
+      if (namesError) throw namesError;
 
-      const stats = (data ?? []) as AdminStats[];
+      const stats = (statsData ?? []) as AdminStats[];
+      const names = (namesData ?? []) as AdminName[];
 
       const statsMap = new Map(
         stats.map((item) => [item.user_id, item])
+      );
+
+      const namesMap = new Map(
+        names.map((item) => [item.user_id, item.display_name])
       );
 
       setAdminUsers((oldUsers) =>
         oldUsers.map((u) => {
           const stat = statsMap.get(u.id);
 
-          if (!stat) return u;
-
           return {
             ...u,
-            file_count: Number(stat.file_count ?? 0),
-            used_bytes: Number(stat.used_bytes ?? 0),
-            free_bytes: Number(stat.free_bytes ?? 0),
-            last_seen: stat.last_seen ?? null,
-            is_online: stat.is_online === true,
+            display_name: namesMap.get(u.id) ?? u.display_name ?? null,
+            file_count: Number(stat?.file_count ?? u.file_count ?? 0),
+            used_bytes: Number(stat?.used_bytes ?? u.used_bytes ?? 0),
+            free_bytes: Number(stat?.free_bytes ?? u.free_bytes ?? 0),
+            last_seen: stat?.last_seen ?? u.last_seen ?? null,
+            is_online: stat?.is_online === true,
           };
         })
       );
 
       if (showMessage) {
-        setMessage("آمار کاربران به‌روزرسانی شد.");
+        setMessage("اطلاعات و آمار کاربران به‌روزرسانی شد.");
       }
     } catch (error: any) {
       if (showMessage) {
-        setMessage("خطا در دریافت آمار کاربران: " + error.message);
+        setMessage("خطا در دریافت اطلاعات کاربران: " + error.message);
       }
     } finally {
       setAdminRefreshing(false);
@@ -355,7 +388,7 @@ export default function Home() {
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("quota_bytes, is_blocked")
+      .select("quota_bytes, is_blocked, display_name")
       .eq("id", user.id)
       .maybeSingle();
 
@@ -363,6 +396,16 @@ export default function Home() {
       setMessage("خطا در دریافت اطلاعات حساب: " + profileError.message);
       return;
     }
+
+    const savedName = String(profile?.display_name ?? "").trim();
+
+    setDisplayName(savedName);
+    setDisplayNameDraft(savedName);
+
+    const requiresName =
+      user.user_metadata?.display_name_required === true && !savedName;
+
+    setNameSetupRequired(requiresName);
 
     setQuota(
       profile?.quota_bytes != null
@@ -388,25 +431,40 @@ export default function Home() {
       return;
     }
 
-    const { data: users, error: usersError } =
-      await supabase.rpc("admin_list_users");
+    const [
+      { data: users, error: usersError },
+      { data: statsData, error: statsError },
+      { data: namesData, error: namesError },
+    ] = await Promise.all([
+      supabase.rpc("admin_list_users"),
+      supabase.rpc("admin_get_user_stats"),
+      supabase.rpc("admin_get_user_names"),
+    ]);
 
     if (usersError) {
       setMessage("خطا در دریافت کاربران: " + usersError.message);
       return;
     }
 
-    const { data: statsData, error: statsError } =
-      await supabase.rpc("admin_get_user_stats");
-
     if (statsError) {
       setMessage("خطا در دریافت آمار کاربران: " + statsError.message);
       return;
     }
 
+    if (namesError) {
+      setMessage("خطا در دریافت نام کاربران: " + namesError.message);
+      return;
+    }
+
     const stats = (statsData ?? []) as AdminStats[];
+    const names = (namesData ?? []) as AdminName[];
+
     const statsMap = new Map(
       stats.map((item) => [item.user_id, item])
+    );
+
+    const namesMap = new Map(
+      names.map((item) => [item.user_id, item.display_name])
     );
 
     const list = ((users ?? []) as any[]).map((u) => {
@@ -414,10 +472,13 @@ export default function Home() {
 
       return {
         ...u,
+        display_name: namesMap.get(u.id) ?? null,
         quota_bytes: Number(u.quota_bytes ?? DEFAULT_LIMIT),
         file_count: Number(stat?.file_count ?? 0),
         used_bytes: Number(stat?.used_bytes ?? 0),
-        free_bytes: Number(stat?.free_bytes ?? u.quota_bytes ?? DEFAULT_LIMIT),
+        free_bytes: Number(
+          stat?.free_bytes ?? u.quota_bytes ?? DEFAULT_LIMIT
+        ),
         last_seen: stat?.last_seen ?? null,
         is_online: stat?.is_online === true,
       } as AdminUser;
@@ -437,8 +498,8 @@ export default function Home() {
 
   useEffect(() => {
     if (user) {
-      loadAccount();
-      refreshFiles();
+      void loadAccount();
+      void refreshFiles();
     } else {
       setIsAdmin(false);
       setIsBlocked(false);
@@ -448,6 +509,9 @@ export default function Home() {
       setQuota(DEFAULT_LIMIT);
       setUserSearch("");
       setActiveTab("home");
+      setDisplayName("");
+      setDisplayNameDraft("");
+      setNameSetupRequired(false);
     }
   }, [user]);
 
@@ -462,6 +526,65 @@ export default function Home() {
     return () => window.clearInterval(interval);
   }, [user, isAdmin, activeTab]);
 
+  // ذخیره نام نمایشی کاربر
+  async function saveDisplayName() {
+    const cleanName = displayNameDraft.trim();
+
+    if (cleanName.length < 2) {
+      setMessage("نام باید حداقل ۲ حرف داشته باشد.");
+      return;
+    }
+
+    if (cleanName.length > 30) {
+      setMessage("نام نمی‌تواند بیشتر از ۳۰ حرف باشد.");
+      return;
+    }
+
+    if (!user) return;
+
+    setNameSaving(true);
+    setMessage("");
+
+    try {
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: user.id,
+            display_name: cleanName,
+          },
+          { onConflict: "id" }
+        );
+
+      if (profileError) throw profileError;
+
+      const { data, error: authError } = await supabase.auth.updateUser({
+        data: {
+          display_name_required: false,
+        },
+      });
+
+      if (authError) throw authError;
+
+      if (data.user) {
+        setUser(data.user);
+      }
+
+      setDisplayName(cleanName);
+      setDisplayNameDraft(cleanName);
+      setNameSetupRequired(false);
+      setMessage("نام نمایشی با موفقیت ذخیره شد.");
+
+      if (isAdmin) {
+        await loadAccount();
+      }
+    } catch (error: any) {
+      setMessage("خطا در ذخیره نام: " + error.message);
+    } finally {
+      setNameSaving(false);
+    }
+  }
+
   async function signUp() {
     setBusy(true);
     setMessage("");
@@ -470,15 +593,26 @@ export default function Home() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            display_name_required: true,
+          },
+        },
       });
 
       if (error) throw error;
 
-      setMessage(
-        data.session
-          ? "ثبت‌نام موفق بود و وارد سایت شدی."
-          : "ثبت‌نام انجام شد. اگر وارد نشدی، تنظیم Confirm email را در Supabase بررسی کن."
-      );
+      if (data.session && data.user) {
+        setUser(data.user);
+        setNameSetupRequired(true);
+        setDisplayName("");
+        setDisplayNameDraft("");
+        setMessage("ثبت‌نام موفق بود. حالا نام نمایشی خودت را انتخاب کن.");
+      } else {
+        setMessage(
+          "ثبت‌نام انجام شد. ایمیلت را تأیید کن و سپس وارد سایت شو تا نام نمایشی‌ات را انتخاب کنی."
+        );
+      }
     } catch (error: any) {
       setMessage("خطا در ثبت‌نام: " + error.message);
     } finally {
@@ -801,7 +935,8 @@ export default function Home() {
 
     return (
       u.id.toLowerCase().includes(search) ||
-      (u.email || "").toLowerCase().includes(search)
+      (u.email || "").toLowerCase().includes(search) ||
+      (u.display_name || "").toLowerCase().includes(search)
     );
   });
 
@@ -1017,6 +1152,10 @@ export default function Home() {
 
         <div className="accountDetails">
           <div className="accountDetail">
+            <span>نام نمایشی</span>
+            <b>{displayName || "نام ثبت نشده"}</b>
+          </div>
+          <div className="accountDetail">
             <span>ایمیل</span>
             <b>{user.email}</b>
           </div>
@@ -1057,6 +1196,30 @@ export default function Home() {
             <p>شخصی‌سازی تجربه My Cloud</p>
           </div>
           <span className="storageIcon">⚙</span>
+        </div>
+
+        <div className="settingGroup">
+          <h3>👤 نام نمایشی</h3>
+          <label htmlFor="displayNameSetting">اسم شما در سایت</label>
+          <input
+            id="displayNameSetting"
+            type="text"
+            maxLength={30}
+            value={displayNameDraft}
+            onChange={(e) => setDisplayNameDraft(e.target.value)}
+            placeholder="نام نمایشی خودت را وارد کن"
+          />
+          <button
+            className="settingsAction"
+            disabled={
+              nameSaving ||
+              displayNameDraft.trim().length < 2 ||
+              displayNameDraft.trim() === displayName
+            }
+            onClick={saveDisplayName}
+          >
+            {nameSaving ? "در حال ذخیره..." : "ذخیره نام"}
+          </button>
         </div>
 
         <div className="settingGroup">
@@ -1213,7 +1376,7 @@ export default function Home() {
           type="text"
           value={userSearch}
           onChange={(e) => setUserSearch(e.target.value)}
-          placeholder="ایمیل یا شناسه کاربر..."
+          placeholder="نام، ایمیل یا شناسه کاربر..."
         />
 
         <div className="adminUserList">
@@ -1227,6 +1390,11 @@ export default function Home() {
                   <span className={u.is_blocked ? "statusBlocked" : "statusActive"}>
                     {u.is_blocked ? "مسدود" : "فعال"}
                   </span>
+                </div>
+
+                <div className="adminSummary">
+                  <span>نام نمایشی</span>
+                  <strong>{u.display_name || "نام ثبت نشده"}</strong>
                 </div>
 
                 <div className="adminSummary">
@@ -1359,6 +1527,40 @@ export default function Home() {
     );
   }
 
+  // صفحه انتخاب نام برای ثبت‌نام‌های جدید
+  function renderNameSetup() {
+    return (
+      <section className="loginLayout">
+        <section className="panel auth premiumAuth nameSetupPanel">
+          <div className="authLogo">☁</div>
+          <span className="eyebrow">MY CLOUD</span>
+          <h2>دوست داری توی سایت اسمت چی باشه؟</h2>
+          <p>این اسم در خوش‌آمدگویی و حساب کاربری تو نمایش داده می‌شود.</p>
+
+          <label htmlFor="firstDisplayName">نام نمایشی</label>
+          <input
+            id="firstDisplayName"
+            type="text"
+            maxLength={30}
+            autoComplete="nickname"
+            value={displayNameDraft}
+            onChange={(e) => setDisplayNameDraft(e.target.value)}
+            placeholder="مثلاً امیررضا"
+          />
+
+          <button
+            disabled={
+              nameSaving || displayNameDraft.trim().length < 2
+            }
+            onClick={saveDisplayName}
+          >
+            {nameSaving ? "در حال ذخیره..." : "تأیید"}
+          </button>
+        </section>
+      </section>
+    );
+  }
+
   return (
     <main className="shell premiumShell" id="home">
       <header className="premiumHeader">
@@ -1462,6 +1664,8 @@ export default function Home() {
             </div>
           </section>
         </section>
+      ) : nameSetupRequired ? (
+        renderNameSetup()
       ) : (
         <>
           {activeTab !== "home" && (
@@ -1494,7 +1698,9 @@ export default function Home() {
               <section className="dashboardHero">
                 <div className="heroContent">
                   <span className="eyebrow">داشبورد شخصی</span>
-                  <h1>سلام، خوش آمدی 👋</h1>
+                  <h1>
+                    سلام{displayName ? ` ${displayName}` : ""}، خوش اومدی 👋
+                  </h1>
                   <p>{user.email}</p>
 
                   {isAdmin && (
@@ -1595,7 +1801,7 @@ export default function Home() {
         </>
       )}
 
-      {user && (
+      {user && !nameSetupRequired && (
         <nav className="bottomNav premiumNav" aria-label="منوی اصلی">
           <a
             href="#home"
