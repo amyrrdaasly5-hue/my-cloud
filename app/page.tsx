@@ -57,7 +57,6 @@ type Page =
   | "settings"
   | "admin";
 
-// تبدیل نام فارسی به کد ASCII امن برای ذخیره‌سازی
 function encodeFileName(fileName: string) {
   const bytes = new TextEncoder().encode(fileName);
   let binary = "";
@@ -75,7 +74,6 @@ function encodeFileName(fileName: string) {
   );
 }
 
-// بازگرداندن نام اصلی فایل برای نمایش
 function getDisplayFileName(storageName: string) {
   const nameWithoutTimestamp = storageName.replace(/^\d+-/, "");
 
@@ -223,7 +221,6 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // ثبت آخرین بازدید و به‌روزرسانی وضعیت آنلاین
   useEffect(() => {
     if (!user) return;
 
@@ -242,16 +239,12 @@ export default function Home() {
           { onConflict: "user_id" }
         );
 
-      if (error) {
-        console.error("خطا در ثبت آخرین بازدید:", error.message);
-      }
+      if (error) console.error(error.message);
     };
 
     void updateLastSeen();
 
-    const interval = window.setInterval(() => {
-      void updateLastSeen();
-    }, 60000);
+    const interval = window.setInterval(updateLastSeen, 60000);
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -326,7 +319,6 @@ export default function Home() {
     }
   }
 
-  // دریافت آمار و نام کاربران از دیتابیس
   async function refreshAdminStats(showMessage = false) {
     if (!isAdmin) return;
 
@@ -402,10 +394,9 @@ export default function Home() {
     setDisplayName(savedName);
     setDisplayNameDraft(savedName);
 
-    const requiresName =
-      user.user_metadata?.display_name_required === true && !savedName;
-
-    setNameSetupRequired(requiresName);
+    setNameSetupRequired(
+      user.user_metadata?.display_name_required === true && !savedName
+    );
 
     setQuota(
       profile?.quota_bytes != null
@@ -515,7 +506,6 @@ export default function Home() {
     }
   }, [user]);
 
-  // به‌روزرسانی خودکار آمار هنگام باز بودن پنل مدیریت
   useEffect(() => {
     if (!user || !isAdmin || activeTab !== "admin") return;
 
@@ -526,7 +516,7 @@ export default function Home() {
     return () => window.clearInterval(interval);
   }, [user, isAdmin, activeTab]);
 
-  // ذخیره نام نمایشی کاربر
+  // ذخیره نام از طریق تابع امن SQL
   async function saveDisplayName() {
     const cleanName = displayNameDraft.trim();
 
@@ -546,17 +536,11 @@ export default function Home() {
     setMessage("");
 
     try {
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: user.id,
-            display_name: cleanName,
-          },
-          { onConflict: "id" }
-        );
+      const { error } = await supabase.rpc("save_my_display_name", {
+        new_name: cleanName,
+      });
 
-      if (profileError) throw profileError;
+      if (error) throw error;
 
       const { data, error: authError } = await supabase.auth.updateUser({
         data: {
@@ -566,9 +550,7 @@ export default function Home() {
 
       if (authError) throw authError;
 
-      if (data.user) {
-        setUser(data.user);
-      }
+      if (data.user) setUser(data.user);
 
       setDisplayName(cleanName);
       setDisplayNameDraft(cleanName);
@@ -630,12 +612,7 @@ export default function Home() {
         password,
       });
 
-      if (error) {
-        if (error.message.toLowerCase().includes("email not confirmed")) {
-          throw new Error("این حساب هنوز تأیید ایمیل نشده است.");
-        }
-        throw error;
-      }
+      if (error) throw error;
 
       setMessage("با موفقیت وارد شدی.");
       setActiveTab("home");
@@ -769,9 +746,7 @@ export default function Home() {
       setMessage("فایل با موفقیت بارگذاری شد.");
       await refreshFiles();
 
-      if (isAdmin) {
-        await refreshAdminStats();
-      }
+      if (isAdmin) await refreshAdminStats();
     } catch (error: any) {
       setMessage("خطا در آپلود: " + error.message);
     } finally {
@@ -817,9 +792,7 @@ export default function Home() {
     setMessage(error ? error.message : "فایل حذف شد.");
     await refreshFiles();
 
-    if (isAdmin) {
-      await refreshAdminStats();
-    }
+    if (isAdmin) await refreshAdminStats();
 
     setBusy(false);
   }
@@ -1116,7 +1089,6 @@ export default function Home() {
                   >
                     ↓ دانلود
                   </button>
-
                   <button
                     className="delete"
                     disabled={busy}
@@ -1124,7 +1096,6 @@ export default function Home() {
                   >
                     حذف
                   </button>
-
                   <FileShare
                     userId={user.id}
                     filePath={f.path}
@@ -1399,30 +1370,18 @@ export default function Home() {
 
                 <div className="adminSummary">
                   <span>وضعیت حضور</span>
-                  <strong
-                    style={{
-                      color: u.is_online ? "#16a34a" : "#9ca3af",
-                    }}
-                  >
+                  <strong style={{ color: u.is_online ? "#16a34a" : "#9ca3af" }}>
                     {u.is_online ? "● آنلاین" : "○ آفلاین"}
                   </strong>
                 </div>
 
                 <small className="adminUid">{u.id}</small>
-
-                <small>
-                  آخرین بازدید: {formatLastSeen(u.last_seen)}
-                </small>
-
-                <small>
-                  نقش: {u.role === "admin" ? "مدیر" : "کاربر"}
-                </small>
+                <small>آخرین بازدید: {formatLastSeen(u.last_seen)}</small>
+                <small>نقش: {u.role === "admin" ? "مدیر" : "کاربر"}</small>
 
                 <div className="adminSummary">
                   <span>تعداد فایل‌ها</span>
-                  <strong>
-                    {Number(u.file_count || 0).toLocaleString("fa-IR")}
-                  </strong>
+                  <strong>{Number(u.file_count || 0).toLocaleString("fa-IR")}</strong>
                 </div>
 
                 <div className="adminSummary">
@@ -1437,9 +1396,7 @@ export default function Home() {
 
                 <div className="adminSummary">
                   <span>فضای باقی‌مانده</span>
-                  <strong>
-                    {formatUsage(Number(u.free_bytes || 0))}
-                  </strong>
+                  <strong>{formatUsage(Number(u.free_bytes || 0))}</strong>
                 </div>
 
                 <label>فضا به گیگابایت</label>
@@ -1527,7 +1484,6 @@ export default function Home() {
     );
   }
 
-  // صفحه انتخاب نام برای ثبت‌نام‌های جدید
   function renderNameSetup() {
     return (
       <section className="loginLayout">
@@ -1549,9 +1505,7 @@ export default function Home() {
           />
 
           <button
-            disabled={
-              nameSaving || displayNameDraft.trim().length < 2
-            }
+            disabled={nameSaving || displayNameDraft.trim().length < 2}
             onClick={saveDisplayName}
           >
             {nameSaving ? "در حال ذخیره..." : "تأیید"}
